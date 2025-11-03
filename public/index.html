@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sales Forecasting</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://esm.sh/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Sales Forecasting</h1>
+    <div id="auth-area">
+      <div id="logged-out">
+        <input id="email" type="email" placeholder="Email" />
+        <input id="password" type="password" placeholder="Password" />
+        <button id="btn-signin">Sign in</button>
+      </div>
+      <div id="logged-in" class="hidden">
+        <span id="whoami"></span>
+        <button id="btn-signout">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container hidden" id="app">
+    <section class="controls">
+      <label>Store
+        <select id="storeSelect"></select>
+      </label>
+      <label>Month
+        <input id="monthInput" type="month" />
+      </label>
+      <button id="btn-load">Load</button>
+      <button id="btn-save" class="secondary">Save Actuals</button>
+    </section>
+
+    <section id="summary" class="summary"></section>
+
+    <section id="calendar" class="calendar"></section>
+  </main>
+
+  <footer>
+    <small>© Skye Bridge LLC — ACE Helpful Place</small>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>
