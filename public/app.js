@@ -4,7 +4,6 @@ const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANO
   auth: { persistSession:false, storage:window.sessionStorage, autoRefreshToken:false }
 });
 
-// ---------- helpers ----------
 const $ = id => document.getElementById(id);
 const ui = {
   status: $('status'),
@@ -21,7 +20,6 @@ const ui = {
   btnLoad: $('btn-load'),
   calendar: $('calendar'),
   summary: $('summary'),
-  // modal
   modal: $('dayModal'),
   modalTitle: $('modalTitle'),
   modalBadge: $('modalBadge'),
@@ -29,8 +27,9 @@ const ui = {
   btnCloseModal: $('btnCloseModal'),
   btnSaveModal: $('btnSaveModal'),
 };
-const setStatus = msg => (ui.status.textContent = msg);
-const setError  = msg => (ui.status.textContent = '⚠️ ' + msg, console.error(msg));
+
+const setStatus = (msg)=> ui.status.textContent = msg;
+const setError  = (msg)=> (ui.status.textContent = '⚠️ ' + msg, console.error(msg));
 const fmt = (n,d=0)=> (n===null||n===undefined||Number.isNaN(n)) ? '—' :
   Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct = (a,b)=> (!b || b===0) ? 0 : (a/b)*100;
@@ -38,8 +37,6 @@ const hide = el => { el.classList.remove('open'); el.classList.add('hidden'); el
 const show = el => { el.classList.remove('hidden'); el.classList.add('open'); el.setAttribute('aria-hidden','false'); };
 const percentClass = p => (p>=100 ? 'ok' : 'bad');
 
-// state
-let session=null;
 let active={ storeId:null, month:null, versionId:null, monthRows:[] };
 
 // ---------- AUTH ----------
@@ -47,8 +44,7 @@ async function refreshAuthUI(){
   hide(ui.modal);
   const { data, error } = await supabase.auth.getSession();
   if (error){ setError('Auth session error: ' + error.message); return; }
-  session = data.session;
-
+  const session = data.session;
   if (session?.user){
     ui.loggedOut.classList.add('hidden');
     ui.loggedIn.classList.remove('hidden');
@@ -129,8 +125,6 @@ async function loadMonth(){
 
     const cell = document.createElement('div');
     cell.className = `cell ${bgClassForDay(d.sales_actual, d.sales_goal)}`;
-    cell.dataset.date = d.date;
-
     const top = document.createElement('div');
     top.className='date-row';
     const btn = document.createElement('button');
@@ -162,11 +156,11 @@ async function loadMonth(){
   setStatus('Month loaded.');
 }
 
-// ---------- SAVE HELPERS ----------
-async function tryEdgeFunctionUpsert(storeId, rows){
+// ---------- SAVE via Edge Function (service role) ----------
+async function upsertActuals(storeId, rows){
   const resp = await fetch(`${cfg.SUPABASE_URL}/functions/v1/upsert-actuals`,{
     method:'POST',
-    headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${cfg.SUPABASE_ANON_KEY}` },
+    headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${cfg.SUPABASE_ANON_KEY}` },
     body: JSON.stringify({ storeId, rows })
   });
   const text = await resp.text();
@@ -175,31 +169,17 @@ async function tryEdgeFunctionUpsert(storeId, rows){
   return json;
 }
 
-async function directTableUpsert(storeId, rows){
-  const shaped = rows.map(r=>({
-    store_id: storeId, date: r.date,
-    transactions: r.transactions ?? null,
-    net_sales: r.net_sales ?? null,
-    gross_margin: r.gross_margin ?? null
-  }));
-  const { error } = await supabase
-    .from('actual_daily')
-    .upsert(shaped, { onConflict: 'store_id,date' });
-  if (error) throw new Error('Direct upsert failed: ' + error.message);
-  return { ok:true };
-}
-
 // ---------- MODAL ----------
 function openDayModal(d){
   ui.modalTitle.textContent = `${d.date} — Day details`;
   const pSales = pct(d.sales_actual, d.sales_goal);
-  ui.modalBadge.textContent = (pSales >= 100) ? 'On / Above Goal' : (pSales >= 95 ? 'Near Goal' : 'Below Goal') + '';
+  ui.modalBadge.textContent = (pSales >= 100) ? 'On / Above Goal' : (pSales >= 95 ? 'Near Goal' : 'Below Goal');
 
   const atvActual = (d.txn_actual && d.sales_actual) ? (d.sales_actual / d.txn_actual) : null;
   const marginPct = (d.sales_actual && d.margin_actual!=null) ? (d.margin_actual / d.sales_actual * 100) : null;
 
   ui.modalKpis.innerHTML = `
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:2px">
+    <div style="display:flex;gap:8px;justify-content:flex-end">
       <button id="btnClear" class="ghost" type="button">Clear all</button>
     </div>
 
@@ -241,9 +221,10 @@ function openDayModal(d){
       </div>
 
     </div>
+
+    <div class="notes">Notes (coming soon—will save to Day Notes)</div>
   `;
 
-  // elements
   const txa = document.getElementById('txa');
   const sla = document.getElementById('sla');
   const m$  = document.getElementById('m$');
@@ -256,16 +237,15 @@ function openDayModal(d){
   const slp = document.getElementById('slp');
   const avp = document.getElementById('avp');
 
-  // recompute % + derived fields
   const setPct = (el, val)=>{ el.textContent = `${fmt(val,2)}%`; el.className = `pct ${percentClass(val)}`; };
   const recompute = ()=>{
     const t = Number(txa.value||0);
     const s = Number(sla.value||0);
     const mg= Number(m$.value||0);
     const atvA = (t>0) ? (s/t) : 0;
-    avA.value = t>0 ? atvA.toFixed(2) : '';
+    avA.value = t>0 ? atvA.toFixed(4) : '';
     setPct(avp, pct(atvA, avg));
-    mpc.value = (s>0) ? (mg/s*100).toFixed(2) : '';
+    mpc.value = (s>0) ? (mg/s*100).toFixed(4) : '';
     setPct(txp, pct(t, txg));
     setPct(slp, pct(s, slg));
   };
@@ -273,10 +253,8 @@ function openDayModal(d){
   sla.addEventListener('input', recompute);
   m$.addEventListener('input', recompute);
 
-  // Clear all
   $('btnClear').onclick = ()=>{ txa.value=''; sla.value=''; m$.value=''; recompute(); };
 
-  // Save (reads values from cards, not bottom inputs)
   ui.btnSaveModal.onclick = async ()=>{
     ui.btnSaveModal.disabled = true;
     try{
@@ -287,19 +265,17 @@ function openDayModal(d){
         gross_margin:m$.value===''?null:Number(m$.value)
       }];
 
-      // Try edge function, fall back to direct upsert
-      try{ await tryEdgeFunctionUpsert(active.storeId, rows); }
-      catch(e1){ console.warn('Edge function failed, falling back:', e1.message); await directTableUpsert(active.storeId, rows); }
+      await upsertActuals(active.storeId, rows);
 
-      // Verify persisted
+      // verify persisted
       const { data:verify, error:vErr } = await supabase
         .from('actual_daily')
         .select('transactions,net_sales,gross_margin')
         .eq('store_id', active.storeId).eq('date', d.date).maybeSingle();
       if (vErr) throw new Error('Verify read failed: ' + vErr.message);
-      if (!verify) throw new Error('Save appears to have failed (no row found)');
+      if (!verify) throw new Error('Save appears to have failed (no row)');
 
-      closeModal();
+      hide(ui.modal);
       await loadMonth();
       setStatus(`Saved actuals for ${d.date}`);
     }catch(e){ setError(e.message); }
@@ -308,10 +284,10 @@ function openDayModal(d){
 
   show(ui.modal);
 }
-function closeModal(){ hide(ui.modal); }
-ui.btnCloseModal.addEventListener('click', closeModal);
-ui.modal.addEventListener('click', (e)=>{ if(e.target===ui.modal) closeModal(); });
-window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !ui.modal.classList.contains('hidden')) closeModal(); });
 
-// ---------- boot ----------
+ui.btnCloseModal.addEventListener('click', ()=> hide(ui.modal));
+ui.modal.addEventListener('click', (e)=>{ if(e.target===ui.modal) hide(ui.modal); });
+window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !ui.modal.classList.contains('hidden')) hide(ui.modal); });
+
+// boot
 (async ()=>{ hide(ui.modal); setStatus('Initializing…'); await refreshAuthUI(); })();
