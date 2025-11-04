@@ -46,6 +46,8 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .lines{display:flex;flex-direction:column;gap:4px;font-variant-numeric:tabular-nums}
 .line{display:flex;justify-content:center}
 .line .mono{font-weight:700}
+.goal .mono{font-weight:400;font-style:italic;} /* goals look different */
+.actual .mono{font-weight:700;font-style:normal;}
 .bg-good{background:var(--bg-good)}
 .bg-bad{background:var(--bg-bad)}
 
@@ -56,15 +58,15 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .modal .sheet header{position:static;border:none;padding:0;display:flex;align-items:center;justify-content:space-between}
 .badge{font-size:12px;padding:4px 10px;border-radius:999px;background:#f3f4f6;color:#111;border:1px solid var(--border)}
 
-/* KPI cards in modal */
+/* KPI cards in modal (slightly smaller) */
 .columns{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 @media (max-width:1100px){ .columns{grid-template-columns:repeat(2,1fr);} }
-.card{border:1px solid var(--border);border-radius:20px;background:#fff;padding:10px 14px 28px;display:flex;flex-direction:column;gap:4px;position:relative;min-height:150px}
-.card-title{font-size:28px;font-weight:800;text-align:center;margin:0}
+.card{border:1px solid var(--border);border-radius:20px;background:#fff;padding:10px 14px 24px;display:flex;flex-direction:column;gap:4px;position:relative;min-height:140px}
+.card-title{font-size:26px;font-weight:800;text-align:center;margin:0}
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:0}
-.label{font-size:13px;color:var(--label);margin:0 0 3px;text-align:center}
-.pill{background:#fafafa;border:1px solid var(--border);border-radius:16px;padding:10px 12px;font-size:20px;font-weight:800;color:#111;width:100%}
-.pct{position:absolute;right:14px;bottom:4px;font-size:20px;font-weight:900}
+.label{font-size:12px;color:var(--label);margin:0 0 2px;text-align:center}
+.pill{background:#fafafa;border:1px solid var(--border);border-radius:16px;padding:8px 10px;font-size:18px;font-weight:800;color:#111;width:100%}
+.pct{position:absolute;right:14px;bottom:4px;font-size:18px;font-weight:900}
 .pct.ok{color:#16a34a}
 .pct.bad{color:#ef4444}
 .ly{position:absolute;left:14px;bottom:6px;font-size:12px;color:#374151}
