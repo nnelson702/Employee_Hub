@@ -145,9 +145,23 @@ function updateCellInPlace(d){
 }
 
 function recomputeSummary(){
-  let mtSalesGoal=0, mtSalesAct=0;
-  for (const r of active.monthRows){ mtSalesGoal += r.sales_goal||0; mtSalesAct += r.sales_actual||0; }
-  ui.summary.innerHTML = `<b>${active.storeId}</b> — ${active.month} &nbsp; | &nbsp; Sales: ${fmt(mtSalesAct,2)} / ${fmt(mtSalesGoal,2)} &nbsp; | &nbsp; ${fmt(pct(mtSalesAct, mtSalesGoal),0)}% to goal`;
+  // Month goal
+  let totalGoal=0, mtdActual=0, elapsedGoal=0;
+  const today = todayISO();
+
+  for (const r of active.monthRows){
+    totalGoal += r.sales_goal||0;
+    mtdActual += r.sales_actual||0;
+    if (r.date <= today) elapsedGoal += r.sales_goal||0;
+  }
+
+  const pctToGoal = pct(mtdActual, totalGoal);
+  const trending = elapsedGoal>0 ? (mtdActual/elapsedGoal)*totalGoal : mtdActual;
+  const trendingPct = pct(trending, totalGoal);
+
+  ui.summary.innerHTML =
+    `Sales: ${fmt(mtdActual,2)} / ${fmt(totalGoal,2)} &nbsp; | &nbsp; ${fmt(pctToGoal,2)}% to Goal &nbsp; | &nbsp; ` +
+    `Trending: $${fmt(trending,0)} / $${fmt(totalGoal,0)} &nbsp; | &nbsp; ${fmt(trendingPct,2)}%`;
 }
 
 async function loadMonth(){
@@ -183,7 +197,7 @@ async function upsertActuals(storeId, rows){
   return json;
 }
 
-// ---------- MODAL ----------
+// ---------- LY helper ----------
 async function fetchLastYearActuals(storeId, isoDate){
   const lastYear = new Date(isoDate+'T00:00:00'); lastYear.setFullYear(lastYear.getFullYear()-1);
   const lyISO = lastYear.toISOString().slice(0,10);
@@ -200,6 +214,7 @@ async function fetchLastYearActuals(storeId, isoDate){
   return { lyTxn, lySales, lyAtv };
 }
 
+// ---------- MODAL ----------
 function openDayModal(d){
   const idx = active.monthRows.findIndex(r=>r.date===d.date);
   if (idx>=0) d = {...active.monthRows[idx]};
@@ -292,7 +307,6 @@ function openDayModal(d){
 
   $('btnClear').onclick = ()=>{ txa.value=''; sla.value=''; m$.value=''; recompute(); };
 
-  // Fill LY values asynchronously
   (async ()=>{
     const { lyTxn, lySales, lyAtv } = await fetchLastYearActuals(active.storeId, d.date);
     if (lyTxn!==null) $('ly-txn').textContent   = `LY: ${fmt(lyTxn)}`;
@@ -310,7 +324,7 @@ function openDayModal(d){
         gross_margin: d.margin_actual
       }]);
 
-      // Optimistic update: memory + tile + summary
+      // Optimistic update
       const i = active.monthRows.findIndex(x=>x.date===d.date);
       if (i>=0){
         active.monthRows[i] = { ...active.monthRows[i],
@@ -318,8 +332,8 @@ function openDayModal(d){
           sales_actual: d.sales_actual,
           margin_actual: d.margin_actual
         };
-        updateCellInPlace(active.monthRows[i]); // <- immediate refresh in grid
-        recomputeSummary();
+        updateCellInPlace(active.monthRows[i]);
+        recomputeSummary(); // <- refresh grey band now
       }
 
       hide(ui.modal);
@@ -335,5 +349,5 @@ ui.btnCloseModal.addEventListener('click', ()=> hide(ui.modal));
 ui.modal.addEventListener('click', (e)=>{ if(e.target===ui.modal) hide(ui.modal); });
 window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !ui.modal.classList.contains('hidden')) hide(ui.modal); });
 
-// boot
+// Boot
 (async ()=>{ hide(ui.modal); setStatus('Initializing…'); await refreshAuthUI(); })();
