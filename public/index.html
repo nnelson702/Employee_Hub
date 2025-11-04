@@ -5,20 +5,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Sales Forecasting</title>
 
-  <!-- Supabase -->
   <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 
-  <!-- App config -->
   <script>
     window.APP_CONFIG = {
       SUPABASE_URL: "https://bvyrxqfffaxthrjfxjue.supabase.co",
-      SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM"
+      SUPABASE_ANON_KEY: "REPLACE_WITH_YOUR_ANON_KEY"
     };
   </script>
 
-  <!-- cache-bust both files so Cloudflare won’t serve stale JS/CSS -->
-  <link rel="stylesheet" href="./styles.css?v=2025-11-03-02" />
-  <script defer src="./app.js?v=2025-11-03-02"></script>
+  <!-- cache bust -->
+  <link rel="stylesheet" href="./styles.css?v=2025-11-03-03" />
+  <script defer src="./app.js?v=2025-11-03-03"></script>
 </head>
 <body>
   <header>
@@ -26,7 +24,6 @@
     <div id="status" class="status">Loading…</div>
   </header>
 
-  <!-- Auth -->
   <div id="logged-out" class="container">
     <div id="auth-area">
       <input id="email" type="email" placeholder="Email" />
@@ -40,7 +37,6 @@
     <button id="btn-signout" class="secondary" style="margin-top:8px;">Sign out</button>
   </div>
 
-  <!-- App -->
   <div id="app" class="container hidden">
     <div class="controls">
       <label>Store
@@ -58,14 +54,12 @@
     <div id="calendar" class="calendar"></div>
   </div>
 
-  <!-- Day Modal -->
+  <!-- Modal -->
   <div id="dayModal" class="modal hidden" aria-hidden="true">
     <div class="sheet">
       <header>
         <h2 id="modalTitle" style="margin:0"></h2>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span id="modalBadge" class="badge">—</span>
-        </div>
+        <span id="modalBadge" class="badge">—</span>
       </header>
 
       <div id="modalKpis"></div>
