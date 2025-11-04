@@ -33,7 +33,7 @@ const ui = {
   btnSaveModal: $('btnSaveModal'),
 };
 
-function setStatus(msg){ ui.status.textContent = msg; console.log('[STATUS]', msg); }
+function setStatus(msg){ ui.status.textContent = msg; }
 function setError(msg){ ui.status.textContent = '⚠️ ' + msg; console.error(msg); }
 function fmt(n, d=0){ if(n===null||n===undefined||Number.isNaN(n)) return '—'; return Number(n).toLocaleString(undefined,{minimumFractionDigits:d, maximumFractionDigits:d}); }
 function pct(a,b){ if(!b) return 0; return (a/b)*100; }
@@ -42,6 +42,7 @@ let session=null;
 let edited={};
 let active={ storeId:null, month:null, versionId:null, monthRows:[] };
 
+// goal coloring
 function goalClass(actual, goal){
   if (goal <= 0) return '';
   if ((actual||0) >= goal) return 'hit';
@@ -49,7 +50,7 @@ function goalClass(actual, goal){
   return 'fail';
 }
 
-// auth
+// ===== AUTH =====
 async function refreshAuthUI(){
   const { data, error } = await supabase.auth.getSession();
   if (error){ setError('Auth session error: ' + error.message); return; }
@@ -81,16 +82,17 @@ ui.btnSignIn.onclick = async ()=>{
 };
 ui.btnSignOut.onclick = async ()=>{ await supabase.auth.signOut(); await refreshAuthUI(); };
 
-// stores
+// ===== STORES =====
 async function loadStores(){
   setStatus('Loading stores…');
   const { data, error } = await supabase.from('v_user_stores').select('*');
   if (error){ setError('Load stores failed: ' + error.message); return; }
   ui.storeSelect.innerHTML='';
   for (const r of data){
+    const id = r.id || r.store_id || r.storeid || r.store;
+    const name = r.name || r.store_name || '';
     const opt = document.createElement('option');
-    opt.value = r.id || r.store_id || r.storeid || r.store; // flexible naming
-    opt.textContent = `${opt.value} — ${r.name || r.store_name || ''}`;
+    opt.value = id; opt.textContent = `${id} — ${name}`;
     ui.storeSelect.appendChild(opt);
   }
   if (!ui.monthInput.value){
@@ -105,6 +107,7 @@ ui.btnLoad.onclick = ()=>{
   loadMonth();
 };
 
+// ===== MONTH VIEW =====
 async function loadMonth(){
   edited={}; ui.calendar.innerHTML=''; ui.summary.textContent='Loading…'; setStatus(`Loading ${active.storeId} — ${active.month}`);
   const { data, error } = await supabase.from('v_calendar_month')
@@ -134,7 +137,12 @@ async function loadMonth(){
 
     const top = document.createElement('div');
     top.className='date-row';
-    top.innerHTML = `<div class="date">${d.date.slice(8)}</div><button class="drill" data-date="${d.date}">Details</button>`;
+    // button is type=button; we attach a single click handler
+    const btn = document.createElement('button');
+    btn.className = 'drill'; btn.type = 'button'; btn.textContent = 'Details';
+    btn.addEventListener('click', ()=>openDayModal(d));
+    top.innerHTML = `<div class="date">${d.date.slice(8)}</div>`;
+    top.appendChild(btn);
     cell.appendChild(top);
 
     const kpis = document.createElement('div');
@@ -162,9 +170,6 @@ async function loadMonth(){
     iTxn.addEventListener('input', markEdited);
     iSales.addEventListener('input', markEdited);
 
-    // open modal
-    top.querySelector('.drill').addEventListener('click', ()=>openDayModal(d));
-
     ui.calendar.appendChild(cell);
   }
 
@@ -177,8 +182,11 @@ async function loadMonth(){
   setStatus('Month loaded.');
 }
 
-// modal
+// ===== MODAL (open/close/save) =====
+let currentDay = null;
+
 function openDayModal(d){
+  currentDay = d;
   ui.modalTitle.textContent = `${d.date} — Details`;
   ui.modalBadge.textContent = (d.sales_actual||0)>= (d.sales_goal||0) ? 'On / Above Goal' :
                               (d.sales_actual||0)>= 0.95*(d.sales_goal||0) ? 'Near Goal' : 'Below Goal';
@@ -192,41 +200,55 @@ function openDayModal(d){
     <div class="kpi">To Goal<b>${fmt((d.sales_goal||0)-(d.sales_actual||0),2)}</b></div>
   `;
 
-  ui.m_txn.value = d.txn_actual ?? '';
+  ui.m_txn.value   = d.txn_actual ?? '';
   ui.m_sales.value = d.sales_actual ?? '';
-  ui.m_margin.value = d.margin_actual ?? '';
+  ui.m_margin.value= d.margin_actual ?? '';
+  ui.m_notes.value = '';
 
   ui.modal.classList.remove('hidden');
   ui.modal.setAttribute('aria-hidden','false');
-
-  // Save single day
-  ui.btnSaveModal.onclick = async ()=>{
-    const row = {
-      date: d.date,
-      transactions: ui.m_txn.value===''?null:Number(ui.m_txn.value),
-      net_sales: ui.m_sales.value===''?null:Number(ui.m_sales.value),
-      gross_margin: ui.m_margin.value===''?null:Number(ui.m_margin.value)
-    };
-    try{
-      setStatus('Saving day…');
-      const resp = await fetch(`${cfg.SUPABASE_URL}/functions/v1/upsert-actuals`, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${cfg.SUPABASE_ANON_KEY}` },
-        body: JSON.stringify({ storeId: active.storeId, rows:[row] })
-      });
-      const json = await resp.json();
-      if (!resp.ok) throw new Error(json.error||'Save failed');
-      closeModal();
-      await loadMonth();
-      setStatus('Saved day.');
-    }catch(e){ setError(e.message); }
-  };
+  // ensure only one click handler is active
+  ui.btnSaveModal.onclick = saveCurrentDayOnce;
 }
-function closeModal(){ ui.modal.classList.add('hidden'); ui.modal.setAttribute('aria-hidden','true'); }
-ui.btnCloseModal.onclick = closeModal;
-ui.modal.addEventListener('click', (e)=>{ if(e.target===ui.modal) closeModal(); });
 
-// save many edits
+function closeModal(){
+  ui.modal.classList.add('hidden');
+  ui.modal.setAttribute('aria-hidden','true');
+  currentDay = null;
+  // remove handler to prevent stacking
+  ui.btnSaveModal.onclick = null;
+}
+
+async function saveCurrentDayOnce(){
+  if (!currentDay) return;
+  const row = {
+    date: currentDay.date,
+    transactions: ui.m_txn.value===''?null:Number(ui.m_txn.value),
+    net_sales:   ui.m_sales.value===''?null:Number(ui.m_sales.value),
+    gross_margin:ui.m_margin.value===''?null:Number(ui.m_margin.value)
+  };
+  ui.btnSaveModal.disabled = true; setStatus('Saving day…');
+  try{
+    const resp = await fetch(`${cfg.SUPABASE_URL}/functions/v1/upsert-actuals`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${cfg.SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ storeId: active.storeId, rows:[row] })
+    });
+    const json = await resp.json();
+    if (!resp.ok) throw new Error(json.error||'Save failed');
+    closeModal();
+    await loadMonth();
+    setStatus('Saved day.');
+  }catch(e){ setError(e.message); }
+  finally{ ui.btnSaveModal.disabled = false; }
+}
+
+// close interactions
+ui.btnCloseModal.addEventListener('click', closeModal);
+ui.modal.addEventListener('click', (e)=>{ if(e.target===ui.modal) closeModal(); });
+window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && ui.modal.getAttribute('aria-hidden')==='false') closeModal(); });
+
+// ===== SAVE MANY =====
 ui.btnSave.onclick = async ()=>{
   const rows = Object.entries(edited).map(([date,vals])=>({ date, ...vals }));
   if (rows.length===0) return setStatus('No changes to save.');
