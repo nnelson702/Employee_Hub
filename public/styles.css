@@ -48,8 +48,8 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .line{display:flex;justify-content:flex-start;align-items:baseline;gap:12px}
 .line.center{justify-content:center}
 
-/* Tile typography (matches mock) */
-.sale-big{font-size:30px;font-weight:800;line-height:1}
+/* Tile typography */
+.sale-big{font-size:32px;font-weight:800;line-height:1;white-space:nowrap}
 .txn-big{font-size:28px;font-weight:800;line-height:1}
 .atv-side{margin-left:auto;font-size:22px;font-weight:800;line-height:1}
 .pct-line{font-size:24px;font-weight:900;line-height:1}
