@@ -3,8 +3,6 @@
   --ink:#111;
   --bg:#fff;
   --muted:#f4f4f5;
-  --ok:#16a34a;
-  --bad:#ef4444;
   --border:#e5e7eb;
   --bg-good:#ecfdf5;   /* light green */
   --bg-bad:#fef2f2;    /* light red */
@@ -44,12 +42,12 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .cell .date{font-weight:700}
 .cell .drill{background:#f3f4f6;color:#111;border:1px solid var(--border);padding:4px 8px;border-radius:8px;font-size:12px}
 
-/* Compact lines (no labels) */
+/* Compact no-label lines */
 .lines{display:flex;flex-direction:column;gap:4px;font-variant-numeric:tabular-nums}
-.line{display:flex;justify-content:center;gap:6px}
+.line{display:flex;justify-content:center}
 .line .mono{font-weight:700}
 
-/* Tile background by goal */
+/* Tile background by sales goal result */
 .bg-good{background:var(--bg-good)}
 .bg-bad{background:var(--bg-bad)}
 
@@ -67,6 +65,7 @@ button:disabled{opacity:.6;cursor:not-allowed}
 }
 .modal .sheet header{position:static;border:none;padding:0;justify-content:space-between}
 .badge{font-size:11px;padding:2px 8px;border-radius:999px;background:#f3f4f6;color:#111;border:1px solid var(--border)}
+
 /* Four columns: Txn / Sales / ATV / Margin */
 .columns{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .card{border:1px solid var(--border);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
@@ -77,4 +76,4 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .card .foot{margin-top:4px;font-size:12px;color:#374151;text-align:center}
 .actions{display:flex;gap:10px;justify-content:flex-end}
 .close{background:#374151}
-.save{background:var(--ace-red)}
+.save{background:#e11}
