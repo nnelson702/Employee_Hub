@@ -1,9 +1,7 @@
 /* global window, document */
 const cfg = window.APP_CONFIG;
-
-// keep sessions non-persistent during build-out
 const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
-  auth: { persistSession: false, storage: window.sessionStorage, autoRefreshToken: false }
+  auth: { persistSession:false, storage:window.sessionStorage, autoRefreshToken:false }
 });
 
 // ---------- helpers ----------
@@ -29,10 +27,6 @@ const ui = {
   modalTitle: $('modalTitle'),
   modalBadge: $('modalBadge'),
   modalKpis: $('modalKpis'),
-  m_txn: $('m_txn'),        // reused DOM ids for save handling
-  m_sales: $('m_sales'),
-  m_margin: $('m_margin'),
-  m_notes: $('m_notes'),
   btnCloseModal: $('btnCloseModal'),
   btnSaveModal: $('btnSaveModal'),
 };
@@ -46,14 +40,11 @@ const show = el => { el.classList.remove('hidden'); el.classList.add('open'); el
 
 // state
 let session=null;
-let edited={};
 let active={ storeId:null, month:null, versionId:null, monthRows:[] };
-let currentDay=null;
 
 // ---------- AUTH ----------
 async function refreshAuthUI(){
-  hide(ui.modal); currentDay = null;
-
+  hide(ui.modal);
   const { data, error } = await supabase.auth.getSession();
   if (error){ setError('Auth session error: ' + error.message); return; }
   session = data.session;
@@ -115,7 +106,7 @@ function bgClassForDay(salesActual, salesGoal){
 }
 
 async function loadMonth(){
-  edited={}; ui.calendar.innerHTML=''; ui.summary.textContent='Loading…'; setStatus(`Loading ${active.storeId} — ${active.month}`);
+  ui.calendar.innerHTML=''; ui.summary.textContent='Loading…'; setStatus(`Loading ${active.storeId} — ${active.month}`);
   const { data, error } = await supabase.from('v_calendar_month')
     .select('*')
     .eq('store_id', active.storeId)
@@ -131,11 +122,11 @@ async function loadMonth(){
   const firstDow = new Date(data[0].date+'T00:00:00').getDay();
   for (let i=0;i<firstDow;i++){ const pad=document.createElement('div'); pad.className='cell'; ui.calendar.appendChild(pad); }
 
-  let mtTxnGoal=0, mtSalesGoal=0, mtTxnAct=0, mtSalesAct=0;
+  let mtSalesGoal=0, mtSalesAct=0;
 
   for (const d of data){
-    mtTxnGoal += d.txn_goal||0; mtSalesGoal += d.sales_goal||0;
-    mtTxnAct  += d.txn_actual||0; mtSalesAct  += d.sales_actual||0;
+    mtSalesGoal += d.sales_goal||0;
+    mtSalesAct  += d.sales_actual||0;
 
     const cell = document.createElement('div');
     cell.className = `cell ${bgClassForDay(d.sales_actual, d.sales_goal)}`;
@@ -150,108 +141,153 @@ async function loadMonth(){
     top.appendChild(btn);
     cell.appendChild(top);
 
-    // KPIs: cleaner, compact
+    // LINES (no labels):
+    // 1) Sales Goal
+    // 2) Txn Goal
+    // 3) ATV Goal & ATV Actual (if available)
+    // 4) % to Sales Goal (only if actuals exist)
     const atvActual = (d.txn_actual && d.sales_actual) ? (d.sales_actual / d.txn_actual) : null;
-    const kpis = document.createElement('div');
-    kpis.className='kpis';
-    kpis.innerHTML = `
-      <div class="kpi">Txn<b>${fmt(d.txn_actual)} / ${fmt(d.txn_goal)}</b></div>
-      <div class="kpi">ATV<b>${fmt(atvActual,2)} / ${fmt(d.atv_goal,2)}</b></div>
-      <div class="kpi">Sales<b>${fmt(d.sales_actual,2)} / ${fmt(d.sales_goal,2)}</b></div>
+    const lines = document.createElement('div');
+    lines.className='lines';
+    lines.innerHTML = `
+      <div class="line"><span class="mono">${fmt(d.sales_goal,2)}</span></div>
+      <div class="line"><span class="mono">${fmt(d.txn_goal)}</span></div>
+      <div class="line"><span class="mono">${fmt(d.atv_goal,2)}${atvActual!==null?` • ${fmt(atvActual,2)}`:''}</span></div>
+      ${d.sales_actual ? `<div class="line"><span class="mono">${fmt(pct(d.sales_actual, d.sales_goal),0)}%</span></div>` : ``}
     `;
-    cell.appendChild(kpis);
+    cell.appendChild(lines);
 
     ui.calendar.appendChild(cell);
   }
 
   ui.summary.innerHTML = `
     <b>${active.storeId}</b> — ${active.month}
-    &nbsp; | &nbsp; Txn: ${fmt(mtTxnAct)} / ${fmt(mtTxnGoal)} 
     &nbsp; | &nbsp; Sales: ${fmt(mtSalesAct,2)} / ${fmt(mtSalesGoal,2)}
     &nbsp; | &nbsp; ${fmt(pct(mtSalesAct, mtSalesGoal),0)}% to goal
   `;
   setStatus('Month loaded.');
 }
 
-// ---------- MODAL ----------
-function pctText(actual, goal, d=0){
-  const p = pct(actual, goal);
-  return `${fmt(p, d)}%`;
-}
-
+// ---------- MODAL (columnar: Txn / Sales / ATV / Margin) ----------
 function openDayModal(d){
-  currentDay = d;
+  ui.modalTitle.textContent = `${d.date} — Details`;
+  const pSales = pct(d.sales_actual, d.sales_goal);
+  ui.modalBadge.textContent = (pSales >= 100) ? 'On / Above Goal' : (pSales >= 95 ? 'Near Goal' : 'Below Goal') ;
 
   const atvActual = (d.txn_actual && d.sales_actual) ? (d.sales_actual / d.txn_actual) : null;
   const marginPct = (d.sales_actual && d.margin_actual!=null) ? (d.margin_actual / d.sales_actual * 100) : null;
 
-  ui.modalTitle.textContent = `${d.date} — Day details`;
-  ui.modalBadge.textContent = ((d.sales_actual||0) >= (d.sales_goal||0) && (d.sales_goal||0)>0) ? 'On / Above Goal' : 'Below Goal';
-
-  // Build grid per your spec:
-  // Net Sales Goal, Projected Transactions, ATV Goal,
-  // Net Sales Actual (editable), Actual Transactions (editable), Actual ATV (auto),
-  // Margin $ (editable), Margin% (auto), % to goal for each (Sales/Txn/ATV)
+  // Build four vertical columns
   ui.modalKpis.innerHTML = `
-    <div class="three-col">
-      <div><label>Net Sales Goal ($)</label><input type="number" value="${d.sales_goal ?? ''}" readonly></div>
-      <div><label>Projected Transactions</label><input type="number" value="${d.txn_goal ?? ''}" readonly></div>
-      <div><label>ATV Goal ($)</label><input type="number" value="${d.atv_goal ?? ''}" readonly></div>
-    </div>
+    <div class="columns">
 
-    <div class="three-col">
-      <div><label>Net Sales Actual ($)</label><input id="m_sales" type="number" step="0.01" value="${d.sales_actual ?? ''}"></div>
-      <div><label>Actual Transactions</label><input id="m_txn" type="number" value="${d.txn_actual ?? ''}"></div>
-      <div><label>Actual ATV ($)</label><input id="m_atv" type="number" step="0.01" value="${atvActual ?? ''}" readonly></div>
-    </div>
-
-    <div class="three-col">
-      <div><label>Margin $</label><input id="m_margin" type="number" step="0.01" value="${d.margin_actual ?? ''}"></div>
-      <div><label>Margin %</label><input id="m_margin_pct" type="number" step="0.01" value="${marginPct ?? ''}" readonly></div>
-      <div><label>% to Goal (Sales / Txn / ATV)</label>
-        <input id="m_to_goal" type="text" value="${
-          `${fmt(pct(d.sales_actual, d.sales_goal),0)}% / ${fmt(pct(d.txn_actual, d.txn_goal),0)}% / ${fmt(pct(atvActual, d.atv_goal),0)}%`
-        }" readonly>
+      <!-- Transactions -->
+      <div class="card" id="col-txn">
+        <div class="row">
+          <div>
+            <label>Goal</label>
+            <input id="txg" type="number" value="${d.txn_goal ?? ''}" readonly>
+          </div>
+          <div>
+            <label>Actual</label>
+            <input id="txa" type="number" value="${d.txn_actual ?? ''}">
+          </div>
+        </div>
+        <div class="foot" id="txp">% to goal: ${fmt(pct(d.txn_actual, d.txn_goal),0)}%</div>
       </div>
+
+      <!-- Sales -->
+      <div class="card" id="col-sales">
+        <div class="row">
+          <div>
+            <label>Goal ($)</label>
+            <input id="slg" type="number" step="0.01" value="${d.sales_goal ?? ''}" readonly>
+          </div>
+          <div>
+            <label>Actual ($)</label>
+            <input id="sla" type="number" step="0.01" value="${d.sales_actual ?? ''}">
+          </div>
+        </div>
+        <div class="foot" id="slp">% to goal: ${fmt(pct(d.sales_actual, d.sales_goal),0)}%</div>
+      </div>
+
+      <!-- ATV -->
+      <div class="card" id="col-atv">
+        <div class="row">
+          <div>
+            <label>Goal ($)</label>
+            <input id="avg" type="number" step="0.01" value="${d.atv_goal ?? ''}" readonly>
+          </div>
+          <div>
+            <label>Actual ($)</label>
+            <input id="ava" type="number" step="0.01" value="${atvActual ?? ''}" readonly>
+          </div>
+        </div>
+        <div class="foot" id="avp">% to goal: ${fmt(pct(atvActual, d.atv_goal),0)}%</div>
+      </div>
+
+      <!-- Margin (no % to goal footer) -->
+      <div class="card" id="col-margin">
+        <div class="row">
+          <div>
+            <label>Margin %</label>
+            <input id="mpc" type="number" step="0.01" value="${marginPct ?? ''}" readonly>
+          </div>
+          <div>
+            <label>Margin $</label>
+            <input id="m$" type="number" step="0.01" value="${d.margin_actual ?? ''}">
+          </div>
+        </div>
+      </div>
+
     </div>
   `;
 
-  // wire dynamic updates inside modal
-  const mSales  = document.getElementById('m_sales');
-  const mTxn    = document.getElementById('m_txn');
-  const mAtv    = document.getElementById('m_atv');
-  const mMargin = document.getElementById('m_margin');
-  const mMarginPct = document.getElementById('m_margin_pct');
-  const mToGoal    = document.getElementById('m_to_goal');
+  // Elements
+  const txa = document.getElementById('txa');
+  const sla = document.getElementById('sla');
+  const m$  = document.getElementById('m$');
+  const txg = Number((document.getElementById('txg').value)||0);
+  const slg = Number((document.getElementById('slg').value)||0);
+  const avg = Number((document.getElementById('avg').value)||0);
+  const avA = document.getElementById('ava');
+  const mpc = document.getElementById('mpc');
+  const txp = document.getElementById('txp');
+  const slp = document.getElementById('slp');
+  const avp = document.getElementById('avp');
 
   const recompute = ()=>{
-    const s = Number(mSales.value||0);
-    const t = Number(mTxn.value||0);
-    const mg = Number(mMargin.value||0);
-    // ATV actual
-    mAtv.value = (t>0) ? (s/t).toFixed(2) : '';
-    // Margin %
-    mMarginPct.value = (s>0 && !Number.isNaN(mg)) ? (mg/s*100).toFixed(2) : '';
-    // % to goal text
-    const atvG = d.atv_goal||0, sG = d.sales_goal||0, tG = d.txn_goal||0;
-    const atvA = (t>0) ? (s/t) : 0;
-    mToGoal.value = `${fmt(pct(s, sG),0)}% / ${fmt(pct(t, tG),0)}% / ${fmt(pct(atvA, atvG),0)}%`;
-  };
-  mSales.addEventListener('input', recompute);
-  mTxn.addEventListener('input', recompute);
-  mMargin.addEventListener('input', recompute);
+    const t = Number(txa.value||0);
+    const s = Number(sla.value||0);
+    const mg= Number(m$.value||0);
 
-  // Save handler
+    // ATV actual & % to goal
+    const atvA = (t>0) ? (s/t) : 0;
+    avA.value = t>0 ? atvA.toFixed(2) : '';
+    avp.textContent = `% to goal: ${fmt(pct(atvA, avg),0)}%`;
+
+    // Margin %
+    mpc.value = (s>0) ? (mg/s*100).toFixed(2) : '';
+
+    // Percent to goal rows
+    txp.textContent = `% to goal: ${fmt(pct(t, txg),0)}%`;
+    slp.textContent = `% to goal: ${fmt(pct(s, slg),0)}%`;
+  };
+  txa.addEventListener('input', recompute);
+  sla.addEventListener('input', recompute);
+  m$.addEventListener('input', recompute);
+
+  // Save
   ui.btnSaveModal.onclick = async ()=>{
     ui.btnSaveModal.disabled = true;
     try{
       const row = {
         date: d.date,
-        transactions: mTxn.value===''?null:Number(mTxn.value),
-        net_sales:   mSales.value===''?null:Number(mSales.value),
-        gross_margin:mMargin.value===''?null:Number(mMargin.value)
+        transactions: txa.value===''?null:Number(txa.value),
+        net_sales:   sla.value===''?null:Number(sla.value),
+        gross_margin:m$.value===''?null:Number(m$.value)
       };
-      const resp = await fetch(`${cfg.SUPABASE_URL}/functions/v1/upsert-actuals`, {
+      const resp = await fetch(`${cfg.SUPABASE_URL}/functions/v1/upsert-actuals`,{
         method:'POST',
         headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${cfg.SUPABASE_ANON_KEY}` },
         body: JSON.stringify({ storeId: active.storeId, rows:[row] })
@@ -267,30 +303,10 @@ function openDayModal(d){
 
   show(ui.modal);
 }
-function closeModal(){ hide(ui.modal); currentDay=null; }
+function closeModal(){ hide(ui.modal); }
 ui.btnCloseModal.addEventListener('click', closeModal);
 ui.modal.addEventListener('click', (e)=>{ if(e.target===ui.modal) closeModal(); });
 window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !ui.modal.classList.contains('hidden')) closeModal(); });
-
-// ---------- SAVE MANY (still available if we re-add inline editing later) ----------
-ui.btnSave.onclick = async ()=>{
-  const rows = Object.entries(edited).map(([date,vals])=>({ date, ...vals }));
-  if (rows.length===0) return setStatus('No changes to save.');
-  ui.btnSave.disabled=true; setStatus('Saving…');
-  try{
-    const resp = await fetch(`${cfg.SUPABASE_URL}/functions/v1/upsert-actuals`,{
-      method:'POST',
-      headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${cfg.SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ storeId: active.storeId, rows })
-    });
-    const json = await resp.json();
-    if(!resp.ok) throw new Error(json.error||'Save failed');
-    edited={};
-    await loadMonth();
-    setStatus('Saved.');
-  }catch(e){ setError('Save failed: '+e.message); }
-  finally{ ui.btnSave.disabled=false; }
-};
 
 // ---------- boot ----------
 (async ()=>{
