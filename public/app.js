@@ -1,7 +1,7 @@
 /* global window, document */
 const cfg = window.APP_CONFIG;
 
-// No persistent session while we stabilize auth & UI
+// keep sessions non-persistent during build-out
 const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
   auth: { persistSession: false, storage: window.sessionStorage, autoRefreshToken: false }
 });
@@ -29,7 +29,7 @@ const ui = {
   modalTitle: $('modalTitle'),
   modalBadge: $('modalBadge'),
   modalKpis: $('modalKpis'),
-  m_txn: $('m_txn'),
+  m_txn: $('m_txn'),        // reused DOM ids for save handling
   m_sales: $('m_sales'),
   m_margin: $('m_margin'),
   m_notes: $('m_notes'),
@@ -40,7 +40,7 @@ const setStatus = msg => (ui.status.textContent = msg);
 const setError  = msg => (ui.status.textContent = '⚠️ ' + msg, console.error(msg));
 const fmt = (n,d=0)=> (n===null||n===undefined||Number.isNaN(n)) ? '—' :
   Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
-const pct = (a,b)=> !b ? 0 : (a/b)*100;
+const pct = (a,b)=> (!b || b===0) ? 0 : (a/b)*100;
 const hide = el => { el.classList.remove('open'); el.classList.add('hidden'); el.setAttribute('aria-hidden','true'); };
 const show = el => { el.classList.remove('hidden'); el.classList.add('open'); el.setAttribute('aria-hidden','false'); };
 
@@ -50,17 +50,8 @@ let edited={};
 let active={ storeId:null, month:null, versionId:null, monthRows:[] };
 let currentDay=null;
 
-// ---------- goal coloring ----------
-function goalClass(actual, goal){
-  if (goal <= 0) return '';
-  if ((actual||0) >= goal) return 'hit';
-  if ((actual||0) >= 0.95*goal) return 'miss';
-  return 'fail';
-}
-
 // ---------- AUTH ----------
 async function refreshAuthUI(){
-  // Force modal closed every time we check auth
   hide(ui.modal); currentDay = null;
 
   const { data, error } = await supabase.auth.getSession();
@@ -81,7 +72,6 @@ async function refreshAuthUI(){
     setStatus('Not signed in.');
   }
 }
-
 ui.btnSignIn.onclick = async ()=>{
   const email = ui.email.value.trim(), password = ui.password.value;
   if (!email || !password) return setError('Enter email and password.');
@@ -93,11 +83,7 @@ ui.btnSignIn.onclick = async ()=>{
   }catch(e){ setError('Sign-in exception: ' + e.message); }
   finally{ ui.btnSignIn.disabled=false; }
 };
-
-ui.btnSignOut.onclick = async ()=>{
-  await supabase.auth.signOut();
-  await refreshAuthUI();
-};
+ui.btnSignOut.onclick = async ()=>{ await supabase.auth.signOut(); await refreshAuthUI(); };
 
 // ---------- STORES ----------
 async function loadStores(){
@@ -112,12 +98,9 @@ async function loadStores(){
     opt.value = id; opt.textContent = `${id} — ${name}`;
     ui.storeSelect.appendChild(opt);
   }
-  if (!ui.monthInput.value){
-    ui.monthInput.value = new Date().toISOString().slice(0,7);
-  }
+  if (!ui.monthInput.value) ui.monthInput.value = new Date().toISOString().slice(0,7);
   setStatus('Stores loaded.');
 }
-
 ui.btnLoad.onclick = ()=>{
   active.storeId = ui.storeSelect.value;
   active.month   = ui.monthInput.value;
@@ -126,6 +109,11 @@ ui.btnLoad.onclick = ()=>{
 };
 
 // ---------- MONTH VIEW ----------
+function bgClassForDay(salesActual, salesGoal){
+  const hit = (salesActual||0) >= (salesGoal||0) && (salesGoal||0) > 0;
+  return hit ? 'bg-good' : 'bg-bad';
+}
+
 async function loadMonth(){
   edited={}; ui.calendar.innerHTML=''; ui.summary.textContent='Loading…'; setStatus(`Loading ${active.storeId} — ${active.month}`);
   const { data, error } = await supabase.from('v_calendar_month')
@@ -150,7 +138,7 @@ async function loadMonth(){
     mtTxnAct  += d.txn_actual||0; mtSalesAct  += d.sales_actual||0;
 
     const cell = document.createElement('div');
-    cell.className = 'cell ' + goalClass(d.sales_actual||0, d.sales_goal||0);
+    cell.className = `cell ${bgClassForDay(d.sales_actual, d.sales_goal)}`;
     cell.dataset.date = d.date;
 
     const top = document.createElement('div');
@@ -162,30 +150,16 @@ async function loadMonth(){
     top.appendChild(btn);
     cell.appendChild(top);
 
+    // KPIs: cleaner, compact
+    const atvActual = (d.txn_actual && d.sales_actual) ? (d.sales_actual / d.txn_actual) : null;
     const kpis = document.createElement('div');
     kpis.className='kpis';
     kpis.innerHTML = `
-      <div class="kpi">Txn<b>${fmt(d.txn_actual)}<span class="goal"> / ${fmt(d.txn_goal)}</span></b></div>
-      <div class="kpi">ATV<b>${fmt(d.atv_goal,2)}</b></div>
-      <div class="kpi">Sales<b>${fmt(d.sales_actual,2)}<span class="goal"> / ${fmt(d.sales_goal,2)}</span></b></div>
+      <div class="kpi">Txn<b>${fmt(d.txn_actual)} / ${fmt(d.txn_goal)}</b></div>
+      <div class="kpi">ATV<b>${fmt(atvActual,2)} / ${fmt(d.atv_goal,2)}</b></div>
+      <div class="kpi">Sales<b>${fmt(d.sales_actual,2)} / ${fmt(d.sales_goal,2)}</b></div>
     `;
     cell.appendChild(kpis);
-
-    const inputs = document.createElement('div'); inputs.className='inputs';
-    const iTxn = document.createElement('input'); iTxn.type='number'; iTxn.placeholder='Txn'; iTxn.value = d.txn_actual ?? '';
-    const iSales= document.createElement('input'); iSales.type='number'; iSales.step='0.01'; iSales.placeholder='Sales'; iSales.value = d.sales_actual ?? '';
-    inputs.appendChild(iTxn); inputs.appendChild(iSales);
-    cell.appendChild(inputs);
-
-    const markEdited = ()=>{
-      edited[d.date] = {
-        transactions: iTxn.value===''?null:Number(iTxn.value),
-        net_sales:    iSales.value===''?null:Number(iSales.value),
-        gross_margin: (edited[d.date]?.gross_margin ?? null)
-      };
-    };
-    iTxn.addEventListener('input', markEdited);
-    iSales.addEventListener('input', markEdited);
 
     ui.calendar.appendChild(cell);
   }
@@ -200,62 +174,105 @@ async function loadMonth(){
 }
 
 // ---------- MODAL ----------
+function pctText(actual, goal, d=0){
+  const p = pct(actual, goal);
+  return `${fmt(p, d)}%`;
+}
+
 function openDayModal(d){
   currentDay = d;
-  ui.modalTitle.textContent = `${d.date} — Details`;
-  ui.modalBadge.textContent = (d.sales_actual||0)>= (d.sales_goal||0) ? 'On / Above Goal' :
-                              (d.sales_actual||0)>= 0.95*(d.sales_goal||0) ? 'Near Goal' : 'Below Goal';
 
+  const atvActual = (d.txn_actual && d.sales_actual) ? (d.sales_actual / d.txn_actual) : null;
+  const marginPct = (d.sales_actual && d.margin_actual!=null) ? (d.margin_actual / d.sales_actual * 100) : null;
+
+  ui.modalTitle.textContent = `${d.date} — Day details`;
+  ui.modalBadge.textContent = ((d.sales_actual||0) >= (d.sales_goal||0) && (d.sales_goal||0)>0) ? 'On / Above Goal' : 'Below Goal';
+
+  // Build grid per your spec:
+  // Net Sales Goal, Projected Transactions, ATV Goal,
+  // Net Sales Actual (editable), Actual Transactions (editable), Actual ATV (auto),
+  // Margin $ (editable), Margin% (auto), % to goal for each (Sales/Txn/ATV)
   ui.modalKpis.innerHTML = `
-    <div class="kpi">Txn Goal<b>${fmt(d.txn_goal)}</b></div>
-    <div class="kpi">ATV Target<b>${fmt(d.atv_goal,2)}</b></div>
-    <div class="kpi">Sales Goal<b>${fmt(d.sales_goal,2)}</b></div>
-    <div class="kpi">Txn Actual<b>${fmt(d.txn_actual)}</b></div>
-    <div class="kpi">Sales Actual<b>${fmt(d.sales_actual,2)}</b></div>
-    <div class="kpi">To Goal<b>${fmt((d.sales_goal||0)-(d.sales_actual||0),2)}</b></div>
-  `;
-  ui.m_txn.value   = d.txn_actual ?? '';
-  ui.m_sales.value = d.sales_actual ?? '';
-  ui.m_margin.value= d.margin_actual ?? '';
-  ui.m_notes.value = '';
+    <div class="three-col">
+      <div><label>Net Sales Goal ($)</label><input type="number" value="${d.sales_goal ?? ''}" readonly></div>
+      <div><label>Projected Transactions</label><input type="number" value="${d.txn_goal ?? ''}" readonly></div>
+      <div><label>ATV Goal ($)</label><input type="number" value="${d.atv_goal ?? ''}" readonly></div>
+    </div>
 
-  // reset handlers (no stacking)
+    <div class="three-col">
+      <div><label>Net Sales Actual ($)</label><input id="m_sales" type="number" step="0.01" value="${d.sales_actual ?? ''}"></div>
+      <div><label>Actual Transactions</label><input id="m_txn" type="number" value="${d.txn_actual ?? ''}"></div>
+      <div><label>Actual ATV ($)</label><input id="m_atv" type="number" step="0.01" value="${atvActual ?? ''}" readonly></div>
+    </div>
+
+    <div class="three-col">
+      <div><label>Margin $</label><input id="m_margin" type="number" step="0.01" value="${d.margin_actual ?? ''}"></div>
+      <div><label>Margin %</label><input id="m_margin_pct" type="number" step="0.01" value="${marginPct ?? ''}" readonly></div>
+      <div><label>% to Goal (Sales / Txn / ATV)</label>
+        <input id="m_to_goal" type="text" value="${
+          `${fmt(pct(d.sales_actual, d.sales_goal),0)}% / ${fmt(pct(d.txn_actual, d.txn_goal),0)}% / ${fmt(pct(atvActual, d.atv_goal),0)}%`
+        }" readonly>
+      </div>
+    </div>
+  `;
+
+  // wire dynamic updates inside modal
+  const mSales  = document.getElementById('m_sales');
+  const mTxn    = document.getElementById('m_txn');
+  const mAtv    = document.getElementById('m_atv');
+  const mMargin = document.getElementById('m_margin');
+  const mMarginPct = document.getElementById('m_margin_pct');
+  const mToGoal    = document.getElementById('m_to_goal');
+
+  const recompute = ()=>{
+    const s = Number(mSales.value||0);
+    const t = Number(mTxn.value||0);
+    const mg = Number(mMargin.value||0);
+    // ATV actual
+    mAtv.value = (t>0) ? (s/t).toFixed(2) : '';
+    // Margin %
+    mMarginPct.value = (s>0 && !Number.isNaN(mg)) ? (mg/s*100).toFixed(2) : '';
+    // % to goal text
+    const atvG = d.atv_goal||0, sG = d.sales_goal||0, tG = d.txn_goal||0;
+    const atvA = (t>0) ? (s/t) : 0;
+    mToGoal.value = `${fmt(pct(s, sG),0)}% / ${fmt(pct(t, tG),0)}% / ${fmt(pct(atvA, atvG),0)}%`;
+  };
+  mSales.addEventListener('input', recompute);
+  mTxn.addEventListener('input', recompute);
+  mMargin.addEventListener('input', recompute);
+
+  // Save handler
   ui.btnSaveModal.onclick = async ()=>{
     ui.btnSaveModal.disabled = true;
     try{
-      await saveDay(d.date);
+      const row = {
+        date: d.date,
+        transactions: mTxn.value===''?null:Number(mTxn.value),
+        net_sales:   mSales.value===''?null:Number(mSales.value),
+        gross_margin:mMargin.value===''?null:Number(mMargin.value)
+      };
+      const resp = await fetch(`${cfg.SUPABASE_URL}/functions/v1/upsert-actuals`, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${cfg.SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ storeId: active.storeId, rows:[row] })
+      });
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json.error||'Save failed');
       closeModal();
       await loadMonth();
       setStatus('Saved day.');
     }catch(e){ setError(e.message); }
-    finally { ui.btnSaveModal.disabled = false; }
+    finally{ ui.btnSaveModal.disabled=false; }
   };
 
   show(ui.modal);
 }
-function closeModal(){ hide(ui.modal); currentDay=null; ui.btnSaveModal.onclick=null; }
-async function saveDay(date){
-  const row = {
-    date,
-    transactions: ui.m_txn.value===''?null:Number(ui.m_txn.value),
-    net_sales:    ui.m_sales.value===''?null:Number(ui.m_sales.value),
-    gross_margin: ui.m_margin.value===''?null:Number(ui.m_margin.value)
-  };
-  const resp = await fetch(`${cfg.SUPABASE_URL}/functions/v1/upsert-actuals`,{
-    method:'POST',
-    headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${cfg.SUPABASE_ANON_KEY}` },
-    body: JSON.stringify({ storeId: active.storeId, rows:[row] })
-  });
-  const json = await resp.json();
-  if (!resp.ok) throw new Error(json.error || 'Save failed');
-}
-
-// Close interactions always active
+function closeModal(){ hide(ui.modal); currentDay=null; }
 ui.btnCloseModal.addEventListener('click', closeModal);
 ui.modal.addEventListener('click', (e)=>{ if(e.target===ui.modal) closeModal(); });
 window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !ui.modal.classList.contains('hidden')) closeModal(); });
 
-// ---------- SAVE MANY ----------
+// ---------- SAVE MANY (still available if we re-add inline editing later) ----------
 ui.btnSave.onclick = async ()=>{
   const rows = Object.entries(edited).map(([date,vals])=>({ date, ...vals }));
   if (rows.length===0) return setStatus('No changes to save.');
@@ -277,7 +294,6 @@ ui.btnSave.onclick = async ()=>{
 
 // ---------- boot ----------
 (async ()=>{
-  // Hard-close modal on first paint
   hide(ui.modal);
   setStatus('Initializing…');
   await refreshAuthUI();
