@@ -19,7 +19,6 @@ const ui = {
   storeSelect: $('storeSelect'),
   monthInput: $('monthInput'),
   btnLoad: $('btn-load'),
-  btnSave: $('btn-save'),
   calendar: $('calendar'),
   summary: $('summary'),
   // modal
@@ -141,11 +140,11 @@ async function loadMonth(){
     top.appendChild(btn);
     cell.appendChild(top);
 
-    // LINES (no labels):
+    // CALENDAR LINES (no labels), exactly as requested:
     // 1) Sales Goal
-    // 2) Txn Goal
-    // 3) ATV Goal & ATV Actual (if available)
-    // 4) % to Sales Goal (only if actuals exist)
+    // 2) Projected Transactions (Txn Goal)
+    // 3) ATV Goal • ATV Actual (actual only if exists)
+    // 4) % to NET Sales Goal (only when actual exists)
     const atvActual = (d.txn_actual && d.sales_actual) ? (d.sales_actual / d.txn_actual) : null;
     const lines = document.createElement('div');
     lines.className='lines';
@@ -168,16 +167,15 @@ async function loadMonth(){
   setStatus('Month loaded.');
 }
 
-// ---------- MODAL (columnar: Txn / Sales / ATV / Margin) ----------
+// ---------- MODAL (4 columns; no “$ to goal”) ----------
 function openDayModal(d){
-  ui.modalTitle.textContent = `${d.date} — Details`;
+  ui.modalTitle.textContent = `${d.date} — Day details`;
   const pSales = pct(d.sales_actual, d.sales_goal);
-  ui.modalBadge.textContent = (pSales >= 100) ? 'On / Above Goal' : (pSales >= 95 ? 'Near Goal' : 'Below Goal') ;
+  ui.modalBadge.textContent = (pSales >= 100) ? 'On / Above Goal' : (pSales >= 95 ? 'Near Goal' : 'Below Goal');
 
   const atvActual = (d.txn_actual && d.sales_actual) ? (d.sales_actual / d.txn_actual) : null;
   const marginPct = (d.sales_actual && d.margin_actual!=null) ? (d.margin_actual / d.sales_actual * 100) : null;
 
-  // Build four vertical columns
   ui.modalKpis.innerHTML = `
     <div class="columns">
 
@@ -226,7 +224,7 @@ function openDayModal(d){
         <div class="foot" id="avp">% to goal: ${fmt(pct(atvActual, d.atv_goal),0)}%</div>
       </div>
 
-      <!-- Margin (no % to goal footer) -->
+      <!-- Margin (no footer) -->
       <div class="card" id="col-margin">
         <div class="row">
           <div>
@@ -243,7 +241,7 @@ function openDayModal(d){
     </div>
   `;
 
-  // Elements
+  // Wire updates
   const txa = document.getElementById('txa');
   const sla = document.getElementById('sla');
   const m$  = document.getElementById('m$');
@@ -261,15 +259,12 @@ function openDayModal(d){
     const s = Number(sla.value||0);
     const mg= Number(m$.value||0);
 
-    // ATV actual & % to goal
     const atvA = (t>0) ? (s/t) : 0;
     avA.value = t>0 ? atvA.toFixed(2) : '';
     avp.textContent = `% to goal: ${fmt(pct(atvA, avg),0)}%`;
 
-    // Margin %
     mpc.value = (s>0) ? (mg/s*100).toFixed(2) : '';
 
-    // Percent to goal rows
     txp.textContent = `% to goal: ${fmt(pct(t, txg),0)}%`;
     slp.textContent = `% to goal: ${fmt(pct(s, slg),0)}%`;
   };
