@@ -32,10 +32,11 @@ const ui = {
 const setStatus = msg => ui.status.textContent = msg;
 const setError  = msg => (ui.status.textContent = '⚠️ ' + msg, console.error(msg));
 const fmt = (n,d=0)=>(n===null||n===undefined||Number.isNaN(n))?'—':Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
-const pct = (a,b)=>(!b||b===0)?0:(a/b)*100;
+const money = (n,d=2)=> (n===null||n===undefined||Number.isNaN(n)) ? '—' : '$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
 const hide = el => { el.classList.remove('open'); el.classList.add('hidden'); el.setAttribute('aria-hidden','true'); };
 const show = el => { el.classList.remove('hidden'); el.classList.add('open'); el.setAttribute('aria-hidden','false'); };
 const percentClass = p => (p>=100?'ok':'bad');
+const pct = (a,b)=>(!b||b===0)?0:(a/b)*100;
 const hitBgClass = (actual, goal)=>((actual||0)>=(goal||0) && (goal||0)>0)?'bg-good':'bg-bad';
 
 let active = { storeId:null, month:null, versionId:null, monthRows:[] };
@@ -101,36 +102,42 @@ function buildCellInner(d){
   const atvActual = (d.txn_actual && d.sales_actual) ? (d.sales_actual/d.txn_actual) : null;
 
   if (showActuals){
+    // Actuals: bold, include $, and % to goal
     return `
       <div class="date-row">
         <div class="date">${d.date.slice(8)}</div>
         <button class="drill" type="button">Details</button>
       </div>
-      <div class="lines">
-        <div class="line"><span class="mono">${fmt(d.sales_actual,2)}</span></div>
+      <div class="lines actual">
+        <div class="line"><span class="mono">${money(d.sales_actual,2)}</span></div>
         <div class="line"><span class="mono">${fmt(d.txn_actual)}</span></div>
-        <div class="line"><span class="mono">${atvActual!==null?fmt(atvActual,2):'—'}</span></div>
+        <div class="line"><span class="mono">${atvActual!==null?money(atvActual,2):'—'}</span></div>
         <div class="line"><span class="mono">${fmt(pct(d.sales_actual, d.sales_goal),2)}%</span></div>
       </div>
     `;
   }else{
+    // Goals: non-bold + italic, include $ where applicable, no % and no bg color
     return `
       <div class="date-row">
         <div class="date">${d.date.slice(8)}</div>
         <button class="drill" type="button">Details</button>
       </div>
-      <div class="lines">
-        <div class="line"><span class="mono">${fmt(d.sales_goal,2)}</span></div>
+      <div class="lines goal">
+        <div class="line"><span class="mono">${money(d.sales_goal,2)}</span></div>
         <div class="line"><span class="mono">${fmt(d.txn_goal)}</span></div>
-        <div class="line"><span class="mono">${fmt(d.atv_goal,2)}</span></div>
+        <div class="line"><span class="mono">${money(d.atv_goal,2)}</span></div>
       </div>
     `;
   }
 }
 
 function updateCellInPlace(d){
+  const showActuals = isPastDate(d.date) || (isToday(d.date) && (d.sales_actual||d.txn_actual));
   let cell = document.getElementById(`cell-${d.date}`);
-  const cls = `cell ${hitBgClass(d.sales_actual, d.sales_goal)}`;
+
+  // Neutral on future days, red/green only when showing actuals
+  const cls = `cell ${showActuals ? hitBgClass(d.sales_actual, d.sales_goal) : ''}`.trim();
+
   if (!cell){
     cell = document.createElement('div');
     cell.id = `cell-${d.date}`;
@@ -145,7 +152,6 @@ function updateCellInPlace(d){
 }
 
 function recomputeSummary(){
-  // Month goal
   let totalGoal=0, mtdActual=0, elapsedGoal=0;
   const today = todayISO();
 
@@ -160,8 +166,8 @@ function recomputeSummary(){
   const trendingPct = pct(trending, totalGoal);
 
   ui.summary.innerHTML =
-    `Sales: ${fmt(mtdActual,2)} / ${fmt(totalGoal,2)} &nbsp; | &nbsp; ${fmt(pctToGoal,2)}% to Goal &nbsp; | &nbsp; ` +
-    `Trending: $${fmt(trending,0)} / $${fmt(totalGoal,0)} &nbsp; | &nbsp; ${fmt(trendingPct,2)}%`;
+    `Sales: ${money(mtdActual,2)} / ${money(totalGoal,2)} &nbsp; | &nbsp; ${fmt(pctToGoal,2)}% to Goal &nbsp; | &nbsp; ` +
+    `Trending: ${money(trending,0)} / ${money(totalGoal,0)} &nbsp; | &nbsp; ${fmt(trendingPct,2)}%`;
 }
 
 async function loadMonth(){
@@ -239,7 +245,7 @@ function openDayModal(d){
           <div><div class="label">Actual</div><input id="txa" class="pill" type="number" value="${d.txn_actual ?? ''}"></div>
         </div>
         <div id="txp" class="pct ${percentClass(pct(d.txn_actual,d.txn_goal))}">${fmt(pct(d.txn_actual,d.txn_goal),2)}%</div>
-        <div id="ly-txn" class="ly">LY: —</div>
+        <div id="ly-txn" class="ly">LY: ${fmt(null)}</div>
       </div>
 
       <div class="card" id="card-sales">
@@ -249,7 +255,7 @@ function openDayModal(d){
           <div><div class="label">Actual ($)</div><input id="sla" class="pill" type="number" step="0.01" value="${d.sales_actual ?? ''}"></div>
         </div>
         <div id="slp" class="pct ${percentClass(pct(d.sales_actual,d.sales_goal))}">${fmt(pct(d.sales_actual,d.sales_goal),2)}%</div>
-        <div id="ly-sales" class="ly">LY: —</div>
+        <div id="ly-sales" class="ly">LY: ${money(null)}</div>
       </div>
 
       <div class="card" id="card-atv">
@@ -259,7 +265,7 @@ function openDayModal(d){
           <div><div class="label">Actual ($)</div><input id="ava" class="pill" type="number" step="0.01" value="${atvActual ?? ''}" readonly></div>
         </div>
         <div id="avp" class="pct ${percentClass(pct(atvActual,d.atv_goal))}">${fmt(pct(atvActual,d.atv_goal),2)}%</div>
-        <div id="ly-atv" class="ly">LY: —</div>
+        <div id="ly-atv" class="ly">LY: ${money(null)}</div>
       </div>
 
       <div class="card" id="card-margin">
@@ -310,8 +316,8 @@ function openDayModal(d){
   (async ()=>{
     const { lyTxn, lySales, lyAtv } = await fetchLastYearActuals(active.storeId, d.date);
     if (lyTxn!==null) $('ly-txn').textContent   = `LY: ${fmt(lyTxn)}`;
-    if (lySales!==null) $('ly-sales').textContent = `LY: ${fmt(lySales,2)}`;
-    if (lyAtv!==null) $('ly-atv').textContent   = `LY: ${fmt(lyAtv,2)}`;
+    if (lySales!==null) $('ly-sales').textContent = `LY: ${money(lySales,2)}`;
+    if (lyAtv!==null) $('ly-atv').textContent   = `LY: ${money(lyAtv,2)}`;
   })();
 
   ui.btnSaveModal.onclick = async ()=>{
@@ -324,7 +330,7 @@ function openDayModal(d){
         gross_margin: d.margin_actual
       }]);
 
-      // Optimistic update
+      // Optimistic update + in-place refresh
       const i = active.monthRows.findIndex(x=>x.date===d.date);
       if (i>=0){
         active.monthRows[i] = { ...active.monthRows[i],
@@ -333,7 +339,7 @@ function openDayModal(d){
           margin_actual: d.margin_actual
         };
         updateCellInPlace(active.monthRows[i]);
-        recomputeSummary(); // <- refresh grey band now
+        recomputeSummary();
       }
 
       hide(ui.modal);
