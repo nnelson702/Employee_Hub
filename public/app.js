@@ -31,8 +31,12 @@ const ui = {
 
 const setStatus = msg => ui.status.textContent = msg;
 const setError  = msg => (ui.status.textContent = '⚠️ ' + msg, console.error(msg));
-const fmt = (n,d=0)=>(n===null||n===undefined||Number.isNaN(n))?'—':Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
-const money = (n,d=2)=> (n===null||n===undefined||Number.isNaN(n)) ? '—' : '$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+
+/* ---------- formatting (max 2 decimals everywhere, ints for counts) ---------- */
+const fmt0 = n => (n===null||n===undefined||Number.isNaN(n)) ? '—' : Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
+const fmt2 = n => (n===null||n===undefined||Number.isNaN(n)) ? '—' : Number(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
+const money = n => (n===null||n===undefined||Number.isNaN(n)) ? '—' : '$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+
 const hide = el => { el.classList.remove('open'); el.classList.add('hidden'); el.setAttribute('aria-hidden','true'); };
 const show = el => { el.classList.remove('hidden'); el.classList.add('open'); el.setAttribute('aria-hidden','false'); };
 const percentClass = p => (p>=100?'ok':'bad');
@@ -45,7 +49,7 @@ function todayISO(){ const d=new Date(); d.setHours(0,0,0,0); return d.toISOStri
 function isPastDate(iso){ const t = new Date(todayISO()); const d = new Date(iso+'T00:00:00'); return d < t; }
 function isToday(iso){ return iso===todayISO(); }
 
-// ---------- AUTH ----------
+/* ---------- AUTH ---------- */
 async function refreshAuthUI(){
   hide(ui.modal);
   const { data, error } = await supabase.auth.getSession();
@@ -78,7 +82,7 @@ ui.btnSignIn.onclick = async ()=>{
 };
 ui.btnSignOut.onclick = async ()=>{ await supabase.auth.signOut(); await refreshAuthUI(); };
 
-// ---------- STORES ----------
+/* ---------- STORES ---------- */
 async function loadStores(){
   setStatus('Loading stores…');
   const { data, error } = await supabase.from('v_user_stores').select('*');
@@ -96,7 +100,7 @@ async function loadStores(){
 }
 ui.btnLoad.onclick = ()=>{ active.storeId = ui.storeSelect.value; active.month = ui.monthInput.value; if(!active.storeId||!active.month) return setError('Pick a store and month'); loadMonth(); };
 
-// ---------- CALENDAR RENDER ----------
+/* ---------- CALENDAR RENDER ---------- */
 function buildActualTile(d){
   const salePct = pct(d.sales_actual, d.sales_goal);
   const colorCls = salePct>=100 ? 'okc' : 'badc';
@@ -108,12 +112,12 @@ function buildActualTile(d){
       <button class="drill" type="button">Details</button>
     </div>
     <div class="lines actual">
-      <div class="line"><span class="mono sale-big ${colorCls}">${money(d.sales_actual,2)}</span></div>
+      <div class="line"><span class="mono sale-big ${colorCls}">${money(d.sales_actual)}</span></div>
       <div class="line">
-        <span class="mono txn-big">${fmt(d.txn_actual)}</span>
-        <span class="mono atv-side ${colorCls}">${atvActual!==null?money(atvActual,2):'—'}</span>
+        <span class="mono txn-big">${fmt0(d.txn_actual)}</span>
+        <span class="mono atv-side ${colorCls}">${atvActual!==null?money(atvActual):'—'}</span>
       </div>
-      <div class="line center"><span class="mono pct-line ${colorCls}">${fmt(salePct,2)}%</span></div>
+      <div class="line center"><span class="mono pct-line ${colorCls}">${fmt2(salePct)}%</span></div>
     </div>
   `;
 }
@@ -126,12 +130,12 @@ function buildGoalTile(d){
       <button class="drill" type="button">Details</button>
     </div>
     <div class="lines goal">
-      <div class="line"><span class="mono sale-big">${money(d.sales_goal,2)}</span></div>
+      <div class="line"><span class="mono sale-big">${money(d.sales_goal)}</span></div>
       <div class="line">
-        <span class="mono txn-big">${fmt(d.txn_goal)}</span>
-        <span class="mono atv-side">${money(d.atv_goal,2)}</span>
+        <span class="mono txn-big">${fmt0(d.txn_goal)}</span>
+        <span class="mono atv-side">${money(d.atv_goal)}</span>
       </div>
-      <div class="line center"><span class="mono pct-line">${fmt(share,2)}%</span></div>
+      <div class="line center"><span class="mono pct-line">${fmt2(share)}%</span></div>
     </div>
   `;
 }
@@ -167,8 +171,8 @@ function recomputeSummary(){
   const trendingPct = pct(trending, totalGoal);
 
   ui.summary.innerHTML =
-    `Sales: ${money(mtdActual,2)} / ${money(totalGoal,2)} &nbsp; | &nbsp; ${fmt(pctToGoal,2)}% to Goal &nbsp; | &nbsp; ` +
-    `Trending: ${money(trending,0)} / ${money(totalGoal,0)} &nbsp; | &nbsp; ${fmt(trendingPct,2)}%`;
+    `Sales: ${money(mtdActual)} / ${money(totalGoal)} &nbsp; | &nbsp; ${fmt2(pctToGoal)}% to Goal &nbsp; | &nbsp; ` +
+    `Trending: ${money(trending)} / ${money(totalGoal)} &nbsp; | &nbsp; ${fmt2(trendingPct)}%`;
 }
 
 async function loadMonth(){
@@ -187,16 +191,15 @@ async function loadMonth(){
   const firstDow = new Date(data[0].date+'T00:00:00').getDay();
   for (let i=0;i<firstDow;i++){ const pad=document.createElement('div'); pad.className='cell'; ui.calendar.appendChild(pad); }
 
-  // compute summary/totals (needed for goal-share %)
+  // summary/totals first (used by goal share %)
   recomputeSummary();
 
-  // render tiles
   for (const d of data){ updateCellInPlace(d); }
 
   setStatus('Month loaded.');
 }
 
-// ---------- SAVE (edge function) ----------
+/* ---------- SAVE (edge function) ---------- */
 async function upsertActuals(storeId, rows){
   const resp = await fetch(`${cfg.SUPABASE_URL}/functions/v1/upsert-actuals`,{
     method:'POST',
@@ -209,7 +212,7 @@ async function upsertActuals(storeId, rows){
   return json;
 }
 
-// ---------- LY helper ----------
+/* ---------- LY helper ---------- */
 async function fetchLastYearActuals(storeId, isoDate){
   const lastYear = new Date(isoDate+'T00:00:00'); lastYear.setFullYear(lastYear.getFullYear()-1);
   const lyISO = lastYear.toISOString().slice(0,10);
@@ -226,12 +229,12 @@ async function fetchLastYearActuals(storeId, isoDate){
   return { lyTxn, lySales, lyAtv };
 }
 
-// ---------- MODAL ----------
+/* ---------- MODAL ---------- */
 function openDayModal(d){
   const idx = active.monthRows.findIndex(r=>r.date===d.date);
   if (idx>=0) d = {...active.monthRows[idx]};
 
-  const paintBadge = ()=>{ const p = pct(d.sales_actual, d.sales_goal); ui.modalBadge.textContent = (p>=100?'On / Above Goal':(p>=95?'Near Goal':'Near Goal')); };
+  const paintBadge = ()=>{ const p = pct(d.sales_actual, d.sales_goal); ui.modalBadge.textContent = (p>=100?'On / Above Goal':'Near Goal'); };
   ui.modalTitle.textContent = `${d.date} — Day details`;
   paintBadge();
 
@@ -250,8 +253,8 @@ function openDayModal(d){
           <div><div class="label">Goal</div><input id="txg" class="pill" type="number" value="${d.txn_goal ?? ''}" readonly></div>
           <div><div class="label">Actual</div><input id="txa" class="pill" type="number" value="${d.txn_actual ?? ''}"></div>
         </div>
-        <div id="txp" class="pct ${percentClass(pct(d.txn_actual,d.txn_goal))}">${fmt(pct(d.txn_actual,d.txn_goal),2)}%</div>
-        <div id="ly-txn" class="ly">LY: ${fmt(null)}</div>
+        <div id="txp" class="pct ${percentClass(pct(d.txn_actual,d.txn_goal))}">${fmt2(pct(d.txn_actual,d.txn_goal))}%</div>
+        <div id="ly-txn" class="ly">LY: ${fmt0(null)}</div>
       </div>
 
       <div class="card" id="card-sales">
@@ -260,7 +263,7 @@ function openDayModal(d){
           <div><div class="label">Goal ($)</div><input id="slg" class="pill" type="number" step="0.01" value="${d.sales_goal ?? ''}" readonly></div>
           <div><div class="label">Actual ($)</div><input id="sla" class="pill" type="number" step="0.01" value="${d.sales_actual ?? ''}"></div>
         </div>
-        <div id="slp" class="pct ${percentClass(pct(d.sales_actual,d.sales_goal))}">${fmt(pct(d.sales_actual,d.sales_goal),2)}%</div>
+        <div id="slp" class="pct ${percentClass(pct(d.sales_actual,d.sales_goal))}">${fmt2(pct(d.sales_actual,d.sales_goal))}%</div>
         <div id="ly-sales" class="ly">LY: ${money(null)}</div>
       </div>
 
@@ -270,7 +273,7 @@ function openDayModal(d){
           <div><div class="label">Goal ($)</div><input id="avg" class="pill" type="number" step="0.01" value="${d.atv_goal ?? ''}" readonly></div>
           <div><div class="label">Actual ($)</div><input id="ava" class="pill" type="number" step="0.01" value="${atvActual ?? ''}" readonly></div>
         </div>
-        <div id="avp" class="pct ${percentClass(pct(atvActual,d.atv_goal))}">${fmt(pct(atvActual,d.atv_goal),2)}%</div>
+        <div id="avp" class="pct ${percentClass(pct(atvActual,d.atv_goal))}">${fmt2(pct(atvActual,d.atv_goal))}%</div>
         <div id="ly-atv" class="ly">LY: ${money(null)}</div>
       </div>
 
@@ -298,20 +301,20 @@ function openDayModal(d){
   const slp = document.getElementById('slp');
   const avp = document.getElementById('avp');
 
-  const setPct = (el, val)=>{ el.textContent = `${fmt(val,2)}%`; el.className = `pct ${percentClass(val)}`; };
+  const setPct = (el, val)=>{ el.textContent = `${fmt2(val)}%`; el.className = `pct ${percentClass(val)}`; };
   const recompute = ()=>{
     d.txn_actual    = txa.value===''?null:Number(txa.value);
-    d.sales_actual  = sla.value===''?null:Number(sla.value);
-    d.margin_actual = m$.value===''?null:Number(m$.value);
+    d.sales_actual  = sla.value===''?null:Number(Number(sla.value).toFixed(2));
+    d.margin_actual = m$.value===''?null:Number(Number(m$.value).toFixed(2));
     const t = d.txn_actual ?? 0, s = d.sales_actual ?? 0, mg = d.margin_actual ?? 0;
     const atvA = (t>0)?(s/t):0;
-    avA.value = t>0 ? atvA.toFixed(4) : '';
+    avA.value = t>0 ? Number(atvA).toFixed(2) : '';
     setPct(avp, pct(atvA, avg));
-    mpc.value = (s>0 && mg!=null) ? (mg/s*100).toFixed(4) : '';
+    mpc.value = (s>0 && mg!=null) ? Number(mg/s*100).toFixed(2) : '';
     setPct(txp, pct(t, txg));
     setPct(slp, pct(s, slg));
     const p = pct(d.sales_actual, d.sales_goal);
-    ui.modalBadge.textContent = (p>=100?'On / Above Goal':(p>=95?'Near Goal':'Near Goal'));
+    ui.modalBadge.textContent = (p>=100?'On / Above Goal':'Near Goal');
   };
   txa.addEventListener('input', recompute);
   sla.addEventListener('input', recompute);
@@ -321,9 +324,9 @@ function openDayModal(d){
 
   (async ()=>{
     const { lyTxn, lySales, lyAtv } = await fetchLastYearActuals(active.storeId, d.date);
-    if (lyTxn!==null) $('ly-txn').textContent   = `LY: ${fmt(lyTxn)}`;
-    if (lySales!==null) $('ly-sales').textContent = `LY: ${money(lySales,2)}`;
-    if (lyAtv!==null) $('ly-atv').textContent   = `LY: ${money(lyAtv,2)}`;
+    if (lyTxn!==null) $('ly-txn').textContent   = `LY: ${fmt0(lyTxn)}`;
+    if (lySales!==null) $('ly-sales').textContent = `LY: ${money(lySales)}`;
+    if (lyAtv!==null) $('ly-atv').textContent   = `LY: ${money(lyAtv)}`;
   })();
 
   ui.btnSaveModal.onclick = async ()=>{
@@ -361,5 +364,5 @@ ui.btnCloseModal.addEventListener('click', ()=> hide(ui.modal));
 ui.modal.addEventListener('click', (e)=>{ if(e.target===ui.modal) hide(ui.modal); });
 window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !ui.modal.classList.contains('hidden')) hide(ui.modal); });
 
-// Boot
+/* ---------- boot ---------- */
 (async ()=>{ hide(ui.modal); setStatus('Initializing…'); await refreshAuthUI(); })();
