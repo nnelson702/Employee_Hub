@@ -1,6 +1,14 @@
 /* global window, document */
 const cfg = window.APP_CONFIG;
-const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+
+// Disable persistent login while we debug (no localStorage carryover)
+const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: false,           // <-- forces fresh session per tab load
+    storage: window.sessionStorage,  // memory-like
+    autoRefreshToken: false
+  }
+});
 
 // helpers
 const $ = id => document.getElementById(id);
@@ -37,10 +45,14 @@ function setStatus(msg){ ui.status.textContent = msg; }
 function setError(msg){ ui.status.textContent = '⚠️ ' + msg; console.error(msg); }
 function fmt(n, d=0){ if(n===null||n===undefined||Number.isNaN(n)) return '—'; return Number(n).toLocaleString(undefined,{minimumFractionDigits:d, maximumFractionDigits:d}); }
 function pct(a,b){ if(!b) return 0; return (a/b)*100; }
+function addHidden(el){ el.classList.add('hidden'); el.setAttribute('aria-hidden','true'); }
+function removeHidden(el){ el.classList.remove('hidden'); el.setAttribute('aria-hidden','false'); }
 
+// state
 let session=null;
 let edited={};
 let active={ storeId:null, month:null, versionId:null, monthRows:[] };
+let currentDay = null;
 
 // goal coloring
 function goalClass(actual, goal){
@@ -52,23 +64,30 @@ function goalClass(actual, goal){
 
 // ===== AUTH =====
 async function refreshAuthUI(){
+  // Always start logged-out view until a successful sign-in in this tab
   const { data, error } = await supabase.auth.getSession();
   if (error){ setError('Auth session error: ' + error.message); return; }
   session = data.session;
+
   if (session?.user){
-    ui.loggedOut.classList.add('hidden');
-    ui.loggedIn.classList.remove('hidden');
-    ui.app.classList.remove('hidden');
+    addHidden(ui.loggedOut);
+    removeHidden(ui.loggedIn);
+    removeHidden(ui.app);
     ui.whoami.textContent = session.user.email;
     setStatus('Signed in as ' + session.user.email);
     await loadStores();
   }else{
-    ui.loggedOut.classList.remove('hidden');
-    ui.loggedIn.classList.add('hidden');
-    ui.app.classList.add('hidden');
+    removeHidden(ui.loggedOut);
+    addHidden(ui.loggedIn);
+    addHidden(ui.app);
     setStatus('Not signed in.');
   }
+
+  // Safety: ensure modal is hidden on page (no auto-open possible)
+  addHidden(ui.modal);
+  currentDay = null;
 }
+
 ui.btnSignIn.onclick = async ()=>{
   const email = ui.email.value.trim(), password = ui.password.value;
   if(!email || !password) return setError('Enter email and password.');
@@ -80,7 +99,11 @@ ui.btnSignIn.onclick = async ()=>{
   }catch(e){ setError('Sign-in exception: ' + e.message); }
   finally{ ui.btnSignIn.disabled=false; }
 };
-ui.btnSignOut.onclick = async ()=>{ await supabase.auth.signOut(); await refreshAuthUI(); };
+
+ui.btnSignOut.onclick = async ()=>{
+  await supabase.auth.signOut();
+  await refreshAuthUI();
+};
 
 // ===== STORES =====
 async function loadStores(){
@@ -137,7 +160,6 @@ async function loadMonth(){
 
     const top = document.createElement('div');
     top.className='date-row';
-    // button is type=button; we attach a single click handler
     const btn = document.createElement('button');
     btn.className = 'drill'; btn.type = 'button'; btn.textContent = 'Details';
     btn.addEventListener('click', ()=>openDayModal(d));
@@ -183,10 +205,11 @@ async function loadMonth(){
 }
 
 // ===== MODAL (open/close/save) =====
-let currentDay = null;
-
 function openDayModal(d){
-  currentDay = d;
+  // force-close any previous
+  addHidden(ui.modal);
+
+  // fill content
   ui.modalTitle.textContent = `${d.date} — Details`;
   ui.modalBadge.textContent = (d.sales_actual||0)>= (d.sales_goal||0) ? 'On / Above Goal' :
                               (d.sales_actual||0)>= 0.95*(d.sales_goal||0) ? 'Near Goal' : 'Below Goal';
@@ -205,24 +228,21 @@ function openDayModal(d){
   ui.m_margin.value= d.margin_actual ?? '';
   ui.m_notes.value = '';
 
-  ui.modal.classList.remove('hidden');
-  ui.modal.setAttribute('aria-hidden','false');
-  // ensure only one click handler is active
-  ui.btnSaveModal.onclick = saveCurrentDayOnce;
-}
+  // attach one-shot save handler
+  ui.btnSaveModal.onclick = async ()=>{
+    ui.btnSaveModal.onclick = null; // prevent stacking
+    await saveDay(d.date);
+  };
 
+  removeHidden(ui.modal);
+}
 function closeModal(){
-  ui.modal.classList.add('hidden');
-  ui.modal.setAttribute('aria-hidden','true');
-  currentDay = null;
-  // remove handler to prevent stacking
+  addHidden(ui.modal);
   ui.btnSaveModal.onclick = null;
 }
-
-async function saveCurrentDayOnce(){
-  if (!currentDay) return;
+async function saveDay(date){
   const row = {
-    date: currentDay.date,
+    date,
     transactions: ui.m_txn.value===''?null:Number(ui.m_txn.value),
     net_sales:   ui.m_sales.value===''?null:Number(ui.m_sales.value),
     gross_margin:ui.m_margin.value===''?null:Number(ui.m_margin.value)
@@ -246,7 +266,7 @@ async function saveCurrentDayOnce(){
 // close interactions
 ui.btnCloseModal.addEventListener('click', closeModal);
 ui.modal.addEventListener('click', (e)=>{ if(e.target===ui.modal) closeModal(); });
-window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && ui.modal.getAttribute('aria-hidden')==='false') closeModal(); });
+window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && ui.modal.getAttribute('aria-hidden')!=='true') closeModal(); });
 
 // ===== SAVE MANY =====
 ui.btnSave.onclick = async ()=>{
@@ -268,10 +288,10 @@ ui.btnSave.onclick = async ()=>{
   finally{ ui.btnSave.disabled=false; }
 };
 
-// init
+// init: always hide modal on boot
 (async ()=>{
-  if(!cfg?.SUPABASE_URL || !cfg?.SUPABASE_ANON_KEY){ setError('Missing config in public/config.js'); return; }
+  addHidden(ui.modal);
   setStatus('Initializing…');
   await refreshAuthUI();
-  supabase.auth.onAuthStateChange(refreshAuthUI);
+  // with persistSession:false we don’t auto-login; user must click Sign in
 })();
