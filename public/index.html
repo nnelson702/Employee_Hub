@@ -1,57 +1,196 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Sales Forecasting</title>
-  <link rel="stylesheet" href="styles.css"/>
-  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-  <script src="config.js"></script>
+
+  <!-- Supabase (UMD) -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+
+  <!-- Inline config (already set to your project) -->
+  <script>
+    window.APP_CONFIG = {
+      SUPABASE_URL: "https://bvyrxqfffaxthrjfxjue.supabase.co",
+      SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM"
+    };
+  </script>
+
+  <link rel="stylesheet" href="./styles.css?v=2025-12-02-01" />
+  <script defer src="./app.js?v=2025-12-02-01"></script>
 </head>
 <body>
-  <header>
+  <header class="appbar">
     <h1>Sales Forecasting</h1>
-    <div id="auth-area">
-      <div id="logged-out">
-        <input id="email" type="email" placeholder="Email"/>
-        <input id="password" type="password" placeholder="Password"/>
-        <button id="btn-signin">Sign in</button>
-      </div>
-      <div id="logged-in" class="hidden">
-        <span id="whoami"></span>
-        <button id="btn-admin" class="ghost hidden" type="button">Admin</button>
-        <button id="btn-signout" class="secondary">Sign out</button>
-      </div>
+    <div class="authbox">
+      <span id="whoami"></span>
+      <button id="btn-signout" class="secondary hidden">Sign out</button>
     </div>
   </header>
 
-  <div class="container">
-    <div id="status" class="summary">Initializing…</div>
+  <!-- Nav -->
+  <nav id="topNav" class="nav hidden">
+    <button data-route="home">Home</button>
+    <button data-route="sales">Sales Goals & Current Results</button>
+    <button data-route="pl">P&L</button>
+    <button data-route="deptwalk">Dept Walk</button>
+    <button data-route="deptwalk-results">Dept Walk Results & Details</button>
+    <button id="nav-admin" data-route="admin" class="admin-only hidden">Admin</button>
+  </nav>
 
-    <section id="app" class="hidden">
-      <div class="controls">
-        <label>Store
-          <select id="storeSelect"></select>
-        </label>
-        <label>Month
-          <input id="monthInput" type="month"/>
-        </label>
-        <button id="btn-load">Load</button>
+  <!-- Status bar -->
+  <div id="status" class="status">Loading…</div>
+
+  <!-- Logged-out simple auth -->
+  <section id="logged-out" class="container">
+    <div id="auth-area">
+      <input id="email" type="email" placeholder="Email" />
+      <input id="password" type="password" placeholder="Password" />
+      <button id="btn-signin">Sign in</button>
+    </div>
+  </section>
+
+  <!-- Pages -->
+  <main>
+
+    <!-- Home (stub) -->
+    <section id="page-home" class="page hidden">
+      <div class="container">
+        <h2>Welcome</h2>
+        <p>This will become a simple landing page with links, tips, and quick KPIs.</p>
       </div>
-
-      <div id="summary" class="summary">—</div>
-      <div id="calendar" class="calendar"></div>
     </section>
-  </div>
 
-  <!-- Day modal (unchanged visually from our last pass) -->
+    <!-- Sales (existing calendar app) -->
+    <section id="page-sales" class="page hidden">
+      <div id="app" class="container">
+        <div class="controls">
+          <label>Store
+            <select id="storeSelect"></select>
+          </label>
+          <label>Month
+            <input id="monthInput" type="month" />
+          </label>
+          <div>
+            <button id="btn-load">Load</button>
+          </div>
+        </div>
+        <div id="summary" class="summary">—</div>
+        <div id="calendar" class="calendar"></div>
+      </div>
+    </section>
+
+    <!-- P&L (stub) -->
+    <section id="page-pl" class="page hidden">
+      <div class="container">
+        <h2>P&L (Coming Soon)</h2>
+        <p>We’ll render monthly P&L snapshots, variance, and drill-ins here.</p>
+      </div>
+    </section>
+
+    <!-- Dept Walk (stub) -->
+    <section id="page-deptwalk" class="page hidden">
+      <div class="container">
+        <h2>Dept Walk (Coming Soon)</h2>
+        <p>Mobile-friendly capture + scoring will land here.</p>
+      </div>
+    </section>
+
+    <!-- Dept Walk Results (stub) -->
+    <section id="page-deptwalk-results" class="page hidden">
+      <div class="container">
+        <h2>Dept Walk Results & Details (Coming Soon)</h2>
+      </div>
+    </section>
+
+    <!-- Admin -->
+    <section id="page-admin" class="page hidden">
+      <div class="container">
+        <h2>Admin</h2>
+
+        <div class="admin-grid">
+          <!-- Users / Admin toggle -->
+          <div class="card">
+            <h3>Users</h3>
+            <div class="row">
+              <input id="admin-user-search" placeholder="Search email…" />
+              <button id="btn-refresh-users" class="secondary">Refresh</button>
+            </div>
+            <table id="tbl-users" class="table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Admin?</th>
+                  <th>User Id</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody><!-- filled by JS --></tbody>
+            </table>
+          </div>
+
+          <!-- Store access mapping -->
+          <div class="card">
+            <h3>Store Access</h3>
+            <div class="row">
+              <label>User
+                <select id="sa-userSelect"></select>
+              </label>
+              <label>Store
+                <select id="sa-storeSelect"></select>
+              </label>
+              <button id="btn-add-access">Grant access</button>
+            </div>
+            <table id="tbl-access" class="table">
+              <thead>
+                <tr>
+                  <th>Store</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody><!-- filled by JS --></tbody>
+            </table>
+          </div>
+
+          <!-- Monthly goals -->
+          <div class="card">
+            <h3>Monthly Goals</h3>
+            <div class="row">
+              <label>Store
+                <select id="mg-storeSelect"></select>
+              </label>
+              <label>Month
+                <input id="mg-monthInput" type="month" />
+              </label>
+              <button id="btn-load-goals" class="secondary">Load</button>
+            </div>
+            <div class="row">
+              <label>Sales Goal ($)
+                <input id="mg-sales" type="number" step="0.01" />
+              </label>
+              <label>Txn Goal
+                <input id="mg-txn" type="number" step="1" />
+              </label>
+              <label>ATV Goal ($)
+                <input id="mg-atv" type="number" step="0.01" />
+              </label>
+              <button id="btn-save-goals">Save Goals</button>
+            </div>
+            <div id="mg-status" class="microstatus">—</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Day modal (unchanged) -->
   <div id="dayModal" class="modal hidden" aria-hidden="true">
     <div class="sheet">
       <header>
         <h2 id="modalTitle" style="margin:0"></h2>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span id="modalBadge" class="badge">Near Goal</span>
-        </div>
+        <span id="modalBadge" class="badge">—</span>
+        <button id="btn-clear-all" class="secondary small">Clear all</button>
       </header>
       <div id="modalKpis"></div>
       <div class="actions">
@@ -60,34 +199,5 @@
       </div>
     </div>
   </div>
-
-  <!-- Admin panel -->
-  <div id="adminPanel" class="modal hidden" aria-hidden="true">
-    <div class="sheet">
-      <header>
-        <h2 style="margin:0">Admin — Store Access</h2>
-        <div style="display:flex;gap:8px">
-          <button id="btnCloseAdmin" class="close">Close</button>
-        </div>
-      </header>
-
-      <div class="admin-grid">
-        <div class="admin-col">
-          <div class="admin-title">Users</div>
-          <div id="adminUsers" class="admin-list"></div>
-        </div>
-        <div class="admin-col">
-          <div class="admin-title">Stores</div>
-          <div id="adminStores" class="admin-list"></div>
-
-          <div class="actions" style="margin-top:12px">
-            <button id="btnSaveAccess" class="save">Save Access</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script src="app.js"></script>
 </body>
 </html>
