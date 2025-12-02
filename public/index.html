@@ -1,73 +1,93 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Sales Forecasting</title>
-
-  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-
-  <script>
-    window.APP_CONFIG = {
-      SUPABASE_URL: "https://bvyrxqfffaxthrjfxjue.supabase.co",
-      SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM"
-    };
-  </script>
-
-  <link rel="stylesheet" href="./styles.css?v=2025-11-03-05" />
-  <script defer src="./app.js?v=2025-11-03-05"></script>
+  <link rel="stylesheet" href="styles.css"/>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
 </head>
 <body>
   <header>
     <h1>Sales Forecasting</h1>
-    <div id="status" class="status">Loading…</div>
-  </header>
-
-  <div id="logged-out" class="container">
     <div id="auth-area">
-      <input id="email" type="email" placeholder="Email" />
-      <input id="password" type="password" placeholder="Password" />
-      <button id="btn-signin">Sign in</button>
-    </div>
-  </div>
-
-  <div id="logged-in" class="container hidden">
-    <div>Signed in as <b id="whoami"></b></div>
-    <button id="btn-signout" class="secondary" style="margin-top:8px;">Sign out</button>
-  </div>
-
-  <div id="app" class="container hidden">
-    <div class="controls">
-      <label>Store
-        <select id="storeSelect"></select>
-      </label>
-      <label>Month
-        <input id="monthInput" type="month" />
-      </label>
-      <div>
-        <button id="btn-load">Load</button>
+      <div id="logged-out">
+        <input id="email" type="email" placeholder="Email"/>
+        <input id="password" type="password" placeholder="Password"/>
+        <button id="btn-signin">Sign in</button>
+      </div>
+      <div id="logged-in" class="hidden">
+        <span id="whoami"></span>
+        <button id="btn-admin" class="ghost hidden" type="button">Admin</button>
+        <button id="btn-signout" class="secondary">Sign out</button>
       </div>
     </div>
+  </header>
 
-    <div id="summary" class="summary">—</div>
-    <div id="calendar" class="calendar"></div>
+  <div class="container">
+    <div id="status" class="summary">Initializing…</div>
+
+    <section id="app" class="hidden">
+      <div class="controls">
+        <label>Store
+          <select id="storeSelect"></select>
+        </label>
+        <label>Month
+          <input id="monthInput" type="month"/>
+        </label>
+        <button id="btn-load">Load</button>
+      </div>
+
+      <div id="summary" class="summary">—</div>
+      <div id="calendar" class="calendar"></div>
+    </section>
   </div>
 
-  <!-- Modal -->
+  <!-- Day modal (unchanged visually from our last pass) -->
   <div id="dayModal" class="modal hidden" aria-hidden="true">
     <div class="sheet">
       <header>
         <h2 id="modalTitle" style="margin:0"></h2>
-        <span id="modalBadge" class="badge">—</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="modalBadge" class="badge">Near Goal</span>
+        </div>
       </header>
-
       <div id="modalKpis"></div>
-
       <div class="actions">
         <button id="btnCloseModal" class="close">Close</button>
         <button id="btnSaveModal" class="save">Save</button>
       </div>
     </div>
   </div>
+
+  <!-- Admin panel -->
+  <div id="adminPanel" class="modal hidden" aria-hidden="true">
+    <div class="sheet">
+      <header>
+        <h2 style="margin:0">Admin — Store Access</h2>
+        <div style="display:flex;gap:8px">
+          <button id="btnCloseAdmin" class="close">Close</button>
+        </div>
+      </header>
+
+      <div class="admin-grid">
+        <div class="admin-col">
+          <div class="admin-title">Users</div>
+          <div id="adminUsers" class="admin-list"></div>
+        </div>
+        <div class="admin-col">
+          <div class="admin-title">Stores</div>
+          <div id="adminStores" class="admin-list"></div>
+
+          <div class="actions" style="margin-top:12px">
+            <button id="btnSaveAccess" class="save">Save Access</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
 </body>
 </html>
