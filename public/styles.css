@@ -25,7 +25,6 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .controls label{display:flex;flex-direction:column;font-size:12px;gap:6px}
 .controls select,.controls input{padding:8px;border:1px solid var(--border);border-radius:8px;min-width:180px}
 
-/* Grey summary band */
 .summary{
   margin:8px 0 14px 0;
   padding:12px 14px;
@@ -36,7 +35,6 @@ button:disabled{opacity:.6;cursor:not-allowed}
   line-height:1.4;
 }
 
-/* Calendar grid */
 .calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
 .cell{border:1px solid var(--border);border-radius:20px;padding:10px;min-height:120px;background:#fff;display:flex;flex-direction:column;gap:8px;transition:box-shadow .15s ease, background-color .2s ease}
 .cell:hover{box-shadow:0 2px 10px rgba(0,0,0,.06)}
@@ -48,32 +46,26 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .line{display:flex;justify-content:flex-start;align-items:baseline;gap:12px}
 .line.center{justify-content:center}
 
-/* Tile typography */
 .sale-big{font-size:32px;font-weight:800;line-height:1;white-space:nowrap}
 .txn-big{font-size:28px;font-weight:800;line-height:1}
 .atv-side{margin-left:auto;font-size:22px;font-weight:800;line-height:1}
 .pct-line{font-size:24px;font-weight:900;line-height:1}
 
-/* Coloring for actuals */
 .okc{color:var(--ok)}
 .badc{color:var(--bad)}
 
-/* Goal vs actual look */
 .goal .mono{font-style:italic;font-weight:400}
 .actual .mono{font-style:normal;font-weight:700}
 
-/* Tile backgrounds when actuals shown */
 .bg-good{background:var(--bg-good)}
 .bg-bad{background:var(--bg-bad)}
 
-/* Modal */
 .modal{display:none !important;}
 .modal.open{display:flex !important;position:fixed;inset:0;background:rgba(0,0,0,.36);align-items:center;justify-content:center;z-index:50}
 .modal .sheet{width:min(980px,94vw);background:#fff;border-radius:16px;border:3px solid #000;padding:16px;display:flex;flex-direction:column;gap:12px}
 .modal .sheet header{position:static;border:none;padding:0;display:flex;align-items:center;justify-content:space-between}
 .badge{font-size:12px;padding:4px 10px;border-radius:999px;background:#f3f4f6;color:#111;border:1px solid var(--border)}
 
-/* KPI cards in modal — slightly smaller text to reduce crowding */
 .columns{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 @media (max-width:1100px){ .columns{grid-template-columns:repeat(2,1fr);} }
 .card{border:1px solid var(--border);border-radius:20px;background:#fff;padding:10px 14px 24px;display:flex;flex-direction:column;gap:4px;position:relative;min-height:140px}
@@ -90,3 +82,12 @@ button:disabled{opacity:.6;cursor:not-allowed}
 .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:6px}
 .close{background:#374151}
 .save{background:#e11}
+
+/* Admin */
+.admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.admin-col{border:1px solid var(--border);border-radius:16px;padding:12px;background:#fff}
+.admin-title{font-weight:800;margin-bottom:8px}
+.admin-list{max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:12px;padding:8px;background:#fafafa}
+.admin-user{padding:8px;border-radius:8px;cursor:pointer}
+.admin-user.active{background:#fff;border:1px solid var(--border)}
+.store-row{display:flex;align-items:center;gap:8px;padding:6px 4px}
