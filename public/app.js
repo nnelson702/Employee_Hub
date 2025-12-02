@@ -1,6 +1,5 @@
 /* global window, document */
 const cfg = window.APP_CONFIG;
-
 const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
   auth: { persistSession: true, storage: window.localStorage, autoRefreshToken: true }
 });
@@ -15,18 +14,27 @@ const ui = {
   password: $('password'),
   btnSignIn: $('btn-signin'),
   btnSignOut: $('btn-signout'),
+  btnAdmin: $('btn-admin'),
+
   app: $('app'),
   storeSelect: $('storeSelect'),
   monthInput: $('monthInput'),
   btnLoad: $('btn-load'),
   calendar: $('calendar'),
   summary: $('summary'),
+
   modal: $('dayModal'),
   modalTitle: $('modalTitle'),
   modalBadge: $('modalBadge'),
   modalKpis: $('modalKpis'),
   btnCloseModal: $('btnCloseModal'),
   btnSaveModal: $('btnSaveModal'),
+
+  adminPanel: $('adminPanel'),
+  btnCloseAdmin: $('btnCloseAdmin'),
+  adminUsers: $('adminUsers'),
+  adminStores: $('adminStores'),
+  btnSaveAccess: $('btnSaveAccess'),
 };
 
 const setStatus = msg => ui.status.textContent = msg;
@@ -36,14 +44,13 @@ const setError  = msg => (ui.status.textContent = '⚠️ ' + msg, console.error
 const fmt0 = n => (n===null||n===undefined||Number.isNaN(n)) ? '—' : Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
 const fmt2 = n => (n===null||n===undefined||Number.isNaN(n)) ? '—' : Number(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
 const money = n => (n===null||n===undefined||Number.isNaN(n)) ? '—' : '$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const percentClass = p => (p>=100?'ok':'bad');
+const pct = (a,b)=>(!b||b===0)?0:(a/b)*100;
 
 const hide = el => { el.classList.remove('open'); el.classList.add('hidden'); el.setAttribute('aria-hidden','true'); };
 const show = el => { el.classList.remove('hidden'); el.classList.add('open'); el.setAttribute('aria-hidden','false'); };
-const percentClass = p => (p>=100?'ok':'bad');
-const pct = (a,b)=>(!b||b===0)?0:(a/b)*100;
-const hitBgClass = (actual, goal)=>((actual||0)>=(goal||0) && (goal||0)>0)?'bg-good':'bg-bad';
 
-let active = { storeId:null, month:null, versionId:null, monthRows:[], totalGoal:0 };
+let active = { storeId:null, month:null, versionId:null, monthRows:[], totalGoal:0, isAdmin:false };
 
 function todayISO(){ const d=new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); }
 function isPastDate(iso){ const t = new Date(todayISO()); const d = new Date(iso+'T00:00:00'); return d < t; }
@@ -52,11 +59,9 @@ function isToday(iso){ return iso===todayISO(); }
 /* ---------- fit Sales text to one line ---------- */
 function fitSaleNode(node){
   if (!node) return;
-  const box = node.parentElement; // the .line container
-  const max = 32;       // default css
-  const min = 18;       // don't go below
+  const box = node.parentElement;
+  const max = 32, min = 18;
   node.style.fontSize = max+'px';
-  // shrink until it fits
   while (node.scrollWidth > box.clientWidth - 8 && parseFloat(node.style.fontSize) > min){
     node.style.fontSize = (parseFloat(node.style.fontSize) - 1) + 'px';
   }
@@ -70,7 +75,7 @@ window.addEventListener('load', fitAllSales);
 
 /* ---------- AUTH ---------- */
 async function refreshAuthUI(){
-  hide(ui.modal);
+  hide(ui.modal); hide(ui.adminPanel);
   const { data, error } = await supabase.auth.getSession();
   if (error){ setError('Auth session error: '+error.message); return; }
   const session = data.session;
@@ -79,6 +84,12 @@ async function refreshAuthUI(){
     ui.loggedIn.classList.remove('hidden');
     ui.app.classList.remove('hidden');
     ui.whoami.textContent = session.user.email;
+
+    // read admin flag
+    const { data: me } = await supabase.from('profiles').select('id,is_admin,email').eq('id', session.user.id).maybeSingle();
+    active.isAdmin = !!me?.is_admin;
+    ui.btnAdmin.classList.toggle('hidden', !active.isAdmin);
+
     setStatus('Signed in as '+session.user.email);
     await loadStores();
   }else{
@@ -120,7 +131,7 @@ async function loadStores(){
 ui.btnLoad.onclick = ()=>{ active.storeId = ui.storeSelect.value; active.month = ui.monthInput.value; if(!active.storeId||!active.month) return setError('Pick a store and month'); loadMonth(); };
 
 /* ---------- CALENDAR RENDER ---------- */
-function buildActualTile(d){
+function renderActualTile(d){
   const salePct = pct(d.sales_actual, d.sales_goal);
   const colorCls = salePct>=100 ? 'okc' : 'badc';
   const atvActual = (d.txn_actual && d.sales_actual) ? (d.sales_actual/d.txn_actual) : null;
@@ -140,8 +151,7 @@ function buildActualTile(d){
     </div>
   `;
 }
-
-function buildGoalTile(d){
+function renderGoalTile(d){
   const share = active.totalGoal>0 ? (d.sales_goal/active.totalGoal*100) : 0;
   return `
     <div class="date-row">
@@ -158,10 +168,9 @@ function buildGoalTile(d){
     </div>
   `;
 }
-
 function updateCellInPlace(d){
   const showActuals = isPastDate(d.date) || (isToday(d.date) && (d.sales_actual||d.txn_actual));
-  const cls = `cell ${showActuals ? hitBgClass(d.sales_actual, d.sales_goal) : ''}`.trim();
+  const cls = `cell ${showActuals ? ((d.sales_actual||0) >= (d.sales_goal||0) ? 'bg-good' : 'bg-bad') : ''}`.trim();
   let cell = document.getElementById(`cell-${d.date}`);
   if (!cell){
     cell = document.createElement('div');
@@ -170,62 +179,47 @@ function updateCellInPlace(d){
     ui.calendar.appendChild(cell);
   }
   cell.className = cls;
-  cell.innerHTML = showActuals ? buildActualTile(d) : buildGoalTile(d);
-
-  // open modal
+  cell.innerHTML = showActuals ? renderActualTile(d) : renderGoalTile(d);
   cell.querySelector('.drill').onclick = ()=>openDayModal({...d});
-
-  // fit the sales amount on this tile
   fitSaleNode(cell.querySelector('.sale-big'));
 }
 
-/* summary and month load remain unchanged from last version */
+/* ---------- Month load & summary ---------- */
 function recomputeSummary(){
   let totalGoal=0, mtdActual=0, elapsedGoal=0;
   const today = todayISO();
-
   for (const r of active.monthRows){
     totalGoal += r.sales_goal||0;
     mtdActual += r.sales_actual||0;
     if (r.date <= today) elapsedGoal += r.sales_goal||0;
   }
   active.totalGoal = totalGoal;
-
   const pctToGoal = pct(mtdActual, totalGoal);
   const trending = elapsedGoal>0 ? (mtdActual/elapsedGoal)*totalGoal : mtdActual;
   const trendingPct = pct(trending, totalGoal);
-
   ui.summary.innerHTML =
     `Sales: ${money(mtdActual)} / ${money(totalGoal)} &nbsp; | &nbsp; ${fmt2(pctToGoal)}% to Goal &nbsp; | &nbsp; ` +
     `Trending: ${money(trending)} / ${money(totalGoal)} &nbsp; | &nbsp; ${fmt2(trendingPct)}%`;
 }
-
 async function loadMonth(){
   ui.calendar.innerHTML=''; ui.summary.textContent='Loading…'; setStatus(`Loading ${active.storeId} — ${active.month}`);
-
   const { data, error } = await supabase.from('v_calendar_month')
     .select('*').eq('store_id', active.storeId).eq('month', active.month).order('date', { ascending:true });
-
   if (error){ setError('Load month failed: '+error.message); ui.summary.textContent='Failed to load month.'; return; }
   if (!data||data.length===0){ ui.summary.textContent='No forecast found for this month.'; setStatus('No forecast'); return; }
-
   active.versionId = data[0].version_id;
   active.monthRows = data;
 
-  // pad for first weekday
+  // pad for weekday
   const firstDow = new Date(data[0].date+'T00:00:00').getDay();
   for (let i=0;i<firstDow;i++){ const pad=document.createElement('div'); pad.className='cell'; ui.calendar.appendChild(pad); }
-
   recomputeSummary();
-
   for (const d of data){ updateCellInPlace(d); }
-  // safety: run fit after full render
   fitAllSales();
-
   setStatus('Month loaded.');
 }
 
-/* ---------- SAVE (edge function) ---------- */
+/* ---------- SAVE actuals (edge function) ---------- */
 async function upsertActuals(storeId, rows){
   const resp = await fetch(`${cfg.SUPABASE_URL}/functions/v1/upsert-actuals`,{
     method:'POST',
@@ -255,7 +249,7 @@ async function fetchLastYearActuals(storeId, isoDate){
   return { lyTxn, lySales, lyAtv };
 }
 
-/* ---------- MODAL (unchanged from last version, except kept your tweaks) ---------- */
+/* ---------- Day modal ---------- */
 function openDayModal(d){
   const idx = active.monthRows.findIndex(r=>r.date===d.date);
   if (idx>=0) d = {...active.monthRows[idx]};
@@ -364,7 +358,6 @@ function openDayModal(d){
         net_sales: d.sales_actual,
         gross_margin: d.margin_actual
       }]);
-
       const i = active.monthRows.findIndex(x=>x.date===d.date);
       if (i>=0){
         active.monthRows[i] = { ...active.monthRows[i],
@@ -376,7 +369,6 @@ function openDayModal(d){
         recomputeSummary();
         fitAllSales();
       }
-
       hide(ui.modal);
       setStatus(`Saved actuals for ${d.date}`);
     }catch(e){ setError(e.message); }
@@ -385,10 +377,94 @@ function openDayModal(d){
 
   show(ui.modal);
 }
-
 ui.btnCloseModal.addEventListener('click', ()=> hide(ui.modal));
 ui.modal.addEventListener('click', (e)=>{ if(e.target===ui.modal) hide(ui.modal); });
 window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !ui.modal.classList.contains('hidden')) hide(ui.modal); });
 
+/* ---------- Admin panel ---------- */
+let adminState = { users: [], stores: [], selectedUserId: null, selectedStores: new Set() };
+
+ui.btnAdmin.addEventListener('click', openAdmin);
+ui.btnCloseAdmin.addEventListener('click', ()=> hide(ui.adminPanel));
+ui.btnSaveAccess.addEventListener('click', saveAccess);
+
+async function openAdmin(){
+  if (!active.isAdmin){ return; }
+  setStatus('Loading admin data…');
+
+  const [{ data: users, error: uErr }, { data: stores, error: sErr }] = await Promise.all([
+    supabase.from('profiles').select('id,email,is_admin').order('email',{ascending:true}),
+    supabase.from('stores').select('id,name').order('id',{ascending:true})
+  ]);
+  if (uErr) return setError('Load users failed: '+uErr.message);
+  if (sErr) return setError('Load stores failed: '+sErr.message);
+
+  adminState.users = users || [];
+  adminState.stores = stores || [];
+  adminRenderUsers();
+  adminRenderStores(null); // blank on first open
+  show(ui.adminPanel);
+  setStatus('Admin ready.');
+}
+
+function adminRenderUsers(){
+  ui.adminUsers.innerHTML='';
+  adminState.users.forEach(u=>{
+    const div = document.createElement('div');
+    div.className = 'admin-user'+(u.id===adminState.selectedUserId?' active':'');
+    div.textContent = u.email + (u.is_admin ? ' (admin)' : '');
+    div.onclick = async ()=>{
+      adminState.selectedUserId = u.id;
+      adminRenderUsers();
+      await loadUserAccess(u.id);
+    };
+    ui.adminUsers.appendChild(div);
+  });
+}
+async function loadUserAccess(userId){
+  ui.adminStores.innerHTML = 'Loading…';
+  const { data, error } = await supabase
+    .from('store_access')
+    .select('store_id')
+    .eq('user_id', userId);
+  if (error){ setError('Load access failed: '+error.message); return; }
+  adminState.selectedStores = new Set((data||[]).map(r=>r.store_id));
+  adminRenderStores(adminState.selectedStores);
+}
+function adminRenderStores(selectedSet){
+  ui.adminStores.innerHTML='';
+  if (!adminState.stores.length){
+    ui.adminStores.textContent='No stores found.'; return;
+  }
+  adminState.stores.forEach(s=>{
+    const row = document.createElement('label');
+    row.className='store-row';
+    const cb = document.createElement('input');
+    cb.type='checkbox';
+    cb.checked = !!(selectedSet && selectedSet.has(s.id));
+    cb.onchange = ()=> {
+      if (cb.checked) adminState.selectedStores.add(s.id);
+      else adminState.selectedStores.delete(s.id);
+    };
+    const txt = document.createElement('span');
+    txt.textContent = `${s.id} — ${s.name||''}`;
+    row.appendChild(cb); row.appendChild(txt);
+    ui.adminStores.appendChild(row);
+  });
+}
+async function saveAccess(){
+  if (!adminState.selectedUserId){ return setError('Pick a user first.'); }
+  ui.btnSaveAccess.disabled = true;
+  try{
+    // delete existing
+    await supabase.from('store_access').delete().eq('user_id', adminState.selectedUserId);
+    // insert selected
+    const rows = Array.from(adminState.selectedStores).map(id=>({ user_id: adminState.selectedUserId, store_id: id }));
+    if (rows.length) await supabase.from('store_access').insert(rows);
+    setStatus('Access saved.');
+  }catch(e){ setError('Save access failed: '+e.message); }
+  finally{ ui.btnSaveAccess.disabled=false; }
+}
+
 /* ---------- boot ---------- */
-(async ()=>{ hide(ui.modal); setStatus('Initializing…'); await refreshAuthUI(); })();
+(async ()=>{ hide(ui.modal); hide(ui.adminPanel); setStatus('Initializing…'); await refreshAuthUI(); })();
