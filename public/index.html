@@ -16,8 +16,8 @@
     };
   </script>
 
-  <link rel="stylesheet" href="./styles.css?v=2025-12-02-01" />
-  <script defer src="./app.js?v=2025-12-02-01"></script>
+  <link rel="stylesheet" href="./styles.css?v=2025-12-02-02" />
+  <script defer src="./app.js?v=2025-12-02-02"></script>
 </head>
 <body>
   <header class="appbar">
@@ -46,7 +46,15 @@
     <div id="auth-area">
       <input id="email" type="email" placeholder="Email" />
       <input id="password" type="password" placeholder="Password" />
-      <button id="btn-signin">Sign in</button>
+
+      <div class="auth-actions">
+        <button id="btn-signin">Sign in</button>
+        <button id="btn-forgot" type="button" class="link-button">
+          Forgot password?
+        </button>
+      </div>
+
+      <div id="auth-message" class="auth-message"></div>
     </div>
   </section>
 
@@ -183,6 +191,19 @@
     </section>
 
   </main>
+
+  <!-- Password reset view -->
+  <section id="password-reset" class="container hidden">
+    <h2>Set a new password</h2>
+    <p>Enter a new password for your account.</p>
+
+    <input id="newPassword" type="password" placeholder="New password" />
+    <input id="confirmPassword" type="password" placeholder="Confirm new password" />
+
+    <button id="btn-set-password">Update password</button>
+
+    <div id="reset-message" class="auth-message"></div>
+  </section>
 
   <!-- Day modal (unchanged) -->
   <div id="dayModal" class="modal hidden" aria-hidden="true">
