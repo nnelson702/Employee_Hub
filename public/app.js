@@ -104,7 +104,7 @@ function routeTo(route) {
   }
 }
 
-// ---------- sales page (existing) ----------
+// ---------- sales page ----------
 $('#btn-load')?.addEventListener('click', async () => {
   const storeId = $('#storeSelect').value;
   const month = $('#monthInput').value; // yyyy-mm
@@ -149,9 +149,6 @@ async function populateStoreDropdowns() {
   // also fill user select in admin
   await refreshUsersForSelect();
 }
-
-// (keep your existing calendar rendering & modal code)
-// Below is a compact version; you already had this working. We only ensure numbers are 2dp, dynamic coloring, and real-time refresh after save.
 
 async function loadMonth(storeId, yyyyMM) {
   // call your build-forecast edge function to ensure version exists
@@ -218,7 +215,7 @@ function renderCalendar(rows, yyyyMM){
       div.classList.add(pctToGoal>=100 ? 'goal-hit':'goal-miss');
     }
 
-    // dynamic sales font: scale down if too big (simple clamp)
+    // dynamic sales font
     const salesDisplay = isPast ? fmtMoney(actSales) : fmtMoney(goalSales);
     const txnDisplay = isPast ? fmtInt(actTxn) : fmtInt(goalTxn);
     const atvDisplay = isPast ? fmtMoney(actAtv) : fmtMoney(goalAtv);
@@ -237,13 +234,12 @@ function renderCalendar(rows, yyyyMM){
   }
 }
 
-// ---- modal (same pattern you have; updates rows and re-renders without F5) ----
+// ---- modal basics ----
 let modalDate = null;
+
 function openDayModal(date, row){
   modalDate = date;
   $('#modalTitle').textContent = `${date} — Day details`;
-  // your KPI cards rendering is already styled; keep your version.
-  // For brevity here, we reuse your existing DOM builder (not expanded).
   buildKpiCards(row);
   $('#dayModal').classList.remove('hidden');
 }
@@ -291,7 +287,6 @@ async function callBuildForecast(storeId, yyyyMM){
 }
 
 // ------ ADMIN ------
-
 async function bootAdmin(){
   // top-level bindings
   $('#btn-refresh-users')?.addEventListener('click', refreshUsersTable);
@@ -320,7 +315,6 @@ async function refreshUsersForSelect(){
     opt.value = u.id; opt.textContent = u.email + (u.is_admin?' (admin)':'');
     sel.appendChild(opt);
   }
-  // ensure stores dropdowns already populated by populateStoreDropdowns()
   await refreshAccessTable();
 }
 
@@ -443,18 +437,154 @@ async function saveGoals(){
   $('#mg-status').textContent = error ? error.message : 'Saved.';
 }
 
-// ---- minimal KPI card builder placeholders (use your existing) ----
+// ---- minimal KPI card builder placeholders ----
 function buildKpiCards(row){
-  // You already have the pretty layout; reuse it. Stub kept to avoid breaking.
   $('#modalKpis').innerHTML = `
     <div class="microstatus muted">KPI editor (unchanged from your current version).</div>
   `;
 }
 function collectModalValues(){
   // Return the expected payload for actual_daily upsert. Adapt to your fields.
-  // Example placeholder:
   return { store_id: currentStoreId, date: modalDate }; 
 }
+
+// --------------------------------------------------------
+// Forgot password + password reset flow
+// --------------------------------------------------------
+(function setupPasswordReset() {
+  // Elements
+  const emailInput = $('#email');
+  const btnForgot = $('#btn-forgot');
+  const authMessageEl = $('#auth-message');
+
+  const passwordResetSection = $('#password-reset');
+  const newPasswordInput = $('#newPassword');
+  const confirmPasswordInput = $('#confirmPassword');
+  const btnSetPassword = $('#btn-set-password');
+  const resetMessageEl = $('#reset-message');
+
+  const loggedOutSection = $('#logged-out');
+  const topNav = $('#topNav');
+  const pages = $$('.page');
+
+  if (!emailInput || !btnForgot) {
+    return;
+  }
+
+  function showStatusMessage(el, message, type = 'info') {
+    if (!el) return;
+    el.textContent = message || '';
+    if (type === 'error') {
+      el.style.color = '#c00';
+    } else if (type === 'success') {
+      el.style.color = '#080';
+    } else {
+      el.style.color = '#555';
+    }
+  }
+
+  function showLoginView() {
+    if (loggedOutSection) loggedOutSection.classList.remove('hidden');
+    if (topNav) topNav.classList.add('hidden');
+    pages.forEach(p => p.classList.add('hidden'));
+    if (passwordResetSection) passwordResetSection.classList.add('hidden');
+  }
+
+  function showResetView() {
+    if (loggedOutSection) loggedOutSection.classList.add('hidden');
+    if (topNav) topNav.classList.add('hidden');
+    pages.forEach(p => p.classList.add('hidden'));
+    if (passwordResetSection) passwordResetSection.classList.remove('hidden');
+  }
+
+  // "Forgot password?" click -> send reset email
+  btnForgot.addEventListener('click', async () => {
+    const email = emailInput.value.trim();
+
+    if (!email) {
+      showStatusMessage(authMessageEl, 'Please enter your email address first.', 'error');
+      return;
+    }
+
+    showStatusMessage(authMessageEl, 'Sending password reset email…');
+
+    const redirectTo = `${window.location.origin}/#/reset-password`;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo
+    });
+
+    if (error) {
+      showStatusMessage(authMessageEl, `Error: ${error.message}`, 'error');
+    } else {
+      showStatusMessage(
+        authMessageEl,
+        'Password reset email sent. Please check your inbox.',
+        'success'
+      );
+    }
+  });
+
+  // If user arrives with a recovery hash in URL, show reset view
+  if (window.location.hash && window.location.hash.includes('type=recovery')) {
+    showResetView();
+    showStatusMessage(resetMessageEl, 'Please enter a new password for your account.');
+  }
+
+  // Also handle Supabase auth state event
+  supabase.auth.onAuthStateChange((event /*, session */) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      showResetView();
+      showStatusMessage(
+        resetMessageEl,
+        'Token verified. Please enter a new password for your account.'
+      );
+    }
+  });
+
+  // Handle "Update password" button
+  if (btnSetPassword) {
+    btnSetPassword.addEventListener('click', async () => {
+      const newPassword = newPasswordInput.value;
+      const confirmPassword = confirmPasswordInput.value;
+
+      if (!newPassword || !confirmPassword) {
+        showStatusMessage(
+          resetMessageEl,
+          'Please enter and confirm your new password.',
+          'error'
+        );
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        showStatusMessage(resetMessageEl, 'Passwords do not match.', 'error');
+        return;
+      }
+
+      showStatusMessage(resetMessageEl, 'Updating password…');
+
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) {
+        showStatusMessage(resetMessageEl, `Error: ${error.message}`, 'error');
+        return;
+      }
+
+      showStatusMessage(
+        resetMessageEl,
+        'Password updated. You can now sign in with your new password.',
+        'success'
+      );
+
+      setTimeout(() => {
+        showLoginView();
+      }, 2000);
+    });
+  }
+})();
 
 // ---- start ----
 initAuth();
