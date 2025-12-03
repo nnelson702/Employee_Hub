@@ -62,5 +62,43 @@ button.small{padding:6px 8px}
 .table th,.table td{border-bottom:1px solid var(--border);padding:8px}
 .table td .pill{display:inline-block;padding:4px 8px;border:1px solid var(--border);border-radius:999px;background:#fff}
 
-#auth-area{display:flex;gap:8px;align-items:center}
-#auth-area input{padding:10px;border:1px solid var(--border);border-radius:10px}
+/* Auth area + forgot password */
+#auth-area{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:flex-start;
+  max-width:320px;
+}
+#auth-area input{
+  padding:10px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  width:100%;
+}
+
+.auth-actions{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  margin-top:4px;
+}
+
+.link-button{
+  background:none;
+  border:none;
+  padding:0;
+  color:var(--ace-red);
+  cursor:pointer;
+  font-size:13px;
+  text-decoration:underline;
+}
+.link-button:hover{
+  color:#b11229;
+}
+
+.auth-message{
+  margin-top:4px;
+  font-size:13px;
+  color:#555;
+}
