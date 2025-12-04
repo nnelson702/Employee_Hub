@@ -38,9 +38,9 @@ async function initAuth() {
     $("#logged-out").classList.add("hidden");
     $("#topNav").classList.remove("hidden");
 
-    await loadProfile();          // loads profile + tab permissions
+    await loadProfile(); // loads profile + tab permissions
     setupNav();
-    routeTo("sales");             // default
+    routeTo("sales"); // default
     await populateStoreDropdowns();
     // load current month by default
     const now = new Date();
@@ -123,20 +123,21 @@ async function loadTabPermissions() {
 }
 
 function applyTabVisibility() {
-  $$("#topNav button").forEach((btn) => {
-    const route = btn.getAttribute("data-route");
-    if (!route) return;
+  $("#topNav button") &&
+    $$("#topNav button").forEach((btn) => {
+      const route = btn.getAttribute("data-route");
+      if (!route) return;
 
-    if (route === "home" || route === "sales") {
-      btn.classList.remove("hidden");
-      return;
-    }
-    if (route === "admin") {
-      btn.classList.toggle("hidden", !profile?.is_admin);
-      return;
-    }
-    btn.classList.toggle("hidden", !allowedTabs.has(route));
-  });
+      if (route === "home" || route === "sales") {
+        btn.classList.remove("hidden");
+        return;
+      }
+      if (route === "admin") {
+        btn.classList.toggle("hidden", !profile?.is_admin);
+        return;
+      }
+      btn.classList.toggle("hidden", !allowedTabs.has(route));
+    });
 }
 
 // ---------- routing ----------
@@ -232,14 +233,15 @@ async function populateStoreDropdowns() {
   }
   const selIds = ["storeSelect", "sa-storeSelect", "mg-storeSelect"];
   selIds.forEach((id) => {
-    const sel = $("#" + id);
-    if (!sel) return;
-    sel.innerHTML = "";
+    const sel = "#" + id;
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.innerHTML = "";
     for (const s of stores) {
       const opt = document.createElement("option");
       opt.value = s.store_id;
       opt.textContent = `${s.store_id} — ${s.store_name ?? ""}`.trim();
-      sel.appendChild(opt);
+      el.appendChild(opt);
     }
   });
 
@@ -553,7 +555,7 @@ async function refreshAccessTable() {
       <td><button class="secondary" data-remove="${row.store_id}">Remove</button></td>
     `;
     tr
-      .querySelector("button[data-remove"])
+      .querySelector("button[data-remove]")
       ?.addEventListener("click", () => removeAccess(userId, row.store_id));
     tb.appendChild(tr);
   }
@@ -696,10 +698,10 @@ async function loadGoals() {
 
 async function saveGoals() {
   const storeId = $("#mg-storeSelect").value;
-  const month = $("#mg-monthInput").value;   // yyyy-mm
+  const month = $("#mg-monthInput").value; // yyyy-mm
   const sales = $("#mg-sales").value ? Number($("#mg-sales").value) : null;
-  const txn   = $("#mg-txn").value   ? Number($("#mg-txn").value)   : null;
-  const atv   = $("#mg-atv").value   ? Number($("#mg-atv").value)   : null;
+  const txn = $("#mg-txn").value ? Number($("#mg-txn").value) : null;
+  const atv = $("#mg-atv").value ? Number($("#mg-atv").value) : null;
 
   if (!storeId || !month) {
     $("#mg-status").textContent = "Select a store and month first.";
