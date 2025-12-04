@@ -16,6 +16,10 @@ const fmtMoney = (n) =>
 const fmtInt = (n) => (n == null ? "—" : Number(n).toLocaleString());
 const fmtPct = (p) => (p == null ? "—" : `${Number(p).toFixed(2)}%`);
 
+// tabs we may restrict per-user (Home & Sales are always allowed)
+const RESTRICTED_TABS = ["pl", "deptwalk", "deptwalk-results", "pop"];
+let allowedTabs = new Set(["home", "sales"]);
+
 // --- state ---
 let session = null;
 let profile = null;
@@ -34,11 +38,10 @@ async function initAuth() {
     $("#logged-out").classList.add("hidden");
     $("#topNav").classList.remove("hidden");
 
-    await loadProfile();
+    await loadProfile();          // loads profile + tab permissions
     setupNav();
-    routeTo("sales"); // default
+    routeTo("sales");             // default
     await populateStoreDropdowns();
-
     // load current month by default
     const now = new Date();
     $("#monthInput").value = `${now.getFullYear()}-${String(
@@ -69,7 +72,6 @@ function bindAuthButtons() {
     session = data.session;
     await initAuth();
   });
-
   $("#btn-signout")?.addEventListener("click", async () => {
     await supabase.auth.signOut();
     location.reload();
@@ -86,12 +88,55 @@ async function loadProfile() {
     $("#status").textContent = error.message;
     return;
   }
-  profile = data || {
-    id: session.user.id,
-    email: session.user.email,
-    is_admin: false,
-  };
+  profile =
+    data || { id: session.user.id, email: session.user.email, is_admin: false };
   $("#nav-admin").classList.toggle("hidden", !profile.is_admin);
+
+  await loadTabPermissions();
+}
+
+// ----- tab permissions -----
+async function loadTabPermissions() {
+  // base allowed tabs
+  allowedTabs = new Set(["home", "sales"]);
+
+  if (!profile) return;
+
+  if (profile.is_admin) {
+    // admins: everything
+    RESTRICTED_TABS.forEach((t) => allowedTabs.add(t));
+    allowedTabs.add("admin");
+    applyTabVisibility();
+    return;
+  }
+
+  // non-admin: read from tab_access
+  const { data, error } = await supabase
+    .from("tab_access")
+    .select("tab_key")
+    .eq("user_id", profile.id);
+  if (!error && data) {
+    data.forEach((row) => allowedTabs.add(row.tab_key));
+  }
+
+  applyTabVisibility();
+}
+
+function applyTabVisibility() {
+  $$("#topNav button").forEach((btn) => {
+    const route = btn.getAttribute("data-route");
+    if (!route) return;
+
+    if (route === "home" || route === "sales") {
+      btn.classList.remove("hidden");
+      return;
+    }
+    if (route === "admin") {
+      btn.classList.toggle("hidden", !profile?.is_admin);
+      return;
+    }
+    btn.classList.toggle("hidden", !allowedTabs.has(route));
+  });
 }
 
 // ---------- routing ----------
@@ -104,6 +149,15 @@ function setupNav() {
 }
 
 function routeTo(route) {
+  // guard: don't allow navigating to tabs the user shouldn't see
+  if (route !== "home" && route !== "sales") {
+    if (route === "admin") {
+      if (!profile?.is_admin) route = "home";
+    } else if (!allowedTabs.has(route)) {
+      route = "sales";
+    }
+  }
+
   // toggle active
   $$("#topNav button").forEach((b) =>
     b.classList.toggle("active", b.getAttribute("data-route") === route)
@@ -160,12 +214,10 @@ async function populateStoreDropdowns() {
     .from("v_user_stores")
     .select("store_id, store_name")
     .order("store_id");
-
   if (error && error.code !== "PGRST116") {
     $("#status").textContent = error.message;
     return;
   }
-
   let stores = data;
   if (!stores) {
     const { data: d2, error: e2 } = await supabase
@@ -178,7 +230,6 @@ async function populateStoreDropdowns() {
     }
     stores = d2;
   }
-
   const selIds = ["storeSelect", "sa-storeSelect", "mg-storeSelect"];
   selIds.forEach((id) => {
     const sel = $("#" + id);
@@ -192,22 +243,22 @@ async function populateStoreDropdowns() {
     }
   });
 
-  // also fill user select in admin
+  // also fill user select in admin (for tab + store access)
   await refreshUsersForSelect();
 }
 
-// ---------- loadMonth (date range, not LIKE) ----------
+// ---------- loadMonth ----------
 async function loadMonth(storeId, yyyyMM) {
-  // best-effort call to build-forecast function; ignore CORS etc
+  // call your build-forecast edge function to ensure version exists
   try {
     await callBuildForecast(storeId, yyyyMM);
-  } catch {
-    // intentionally ignored; calendar still loads from existing rows
+  } catch (e) {
+    // non-blocking
   }
 
   const [yearStr, monthStr] = yyyyMM.split("-");
   const year = Number(yearStr);
-  const month = Number(monthStr);
+  const month = Number(monthStr); // 1–12
   if (!year || !month) {
     $("#status").textContent = "Invalid month.";
     return;
@@ -249,7 +300,7 @@ function renderCalendar(rows, yyyyMM) {
   const cal = $("#calendar");
   cal.innerHTML = "";
   const monthStart = new Date(`${yyyyMM}-01T00:00:00`);
-  const firstDow = monthStart.getDay(); // 0=Sun
+  const firstDow = monthStart.getDay(); // 0 sun
   const daysInMonth = new Date(
     monthStart.getFullYear(),
     monthStart.getMonth() + 1,
@@ -265,7 +316,6 @@ function renderCalendar(rows, yyyyMM) {
 
   const today = new Date();
   const todayKey = today.toISOString().slice(0, 10);
-
   for (let day = 1; day <= daysInMonth; day++) {
     const date = `${yyyyMM}-${String(day).padStart(2, "0")}`;
     const row = rows.find((r) => r.date === date) || {};
@@ -301,9 +351,9 @@ function renderCalendar(rows, yyyyMM) {
     }</div>
     `.replace(/\s+/g, " ");
 
-    div
-      .querySelector(".details")
-      ?.addEventListener("click", () => openDayModal(date, row));
+    div.querySelector(".details")?.addEventListener("click", () =>
+      openDayModal(date, row)
+    );
     cal.appendChild(div);
   }
 }
@@ -354,28 +404,29 @@ $("#btn-clear-all")?.addEventListener("click", async () => {
 
 // ---- Edge function call (best-effort) ----
 async function callBuildForecast(storeId, yyyyMM) {
-  // This may throw on CORS; caller wraps in try/catch
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/build-forecast`, {
+  const { error } = await fetch(`${SUPABASE_URL}/functions/v1/build-forecast`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
     },
     body: JSON.stringify({ storeId, month: yyyyMM }),
-  });
-  // ignore body; we only care that it doesn't explode
-  if (!res.ok) {
-    console.warn("build-forecast returned", res.status);
-  }
+  })
+    .then((r) => r.json())
+    .catch(() => ({ error: null }));
+  if (error) console.warn(error);
 }
 
 // ------ ADMIN ------
 async function bootAdmin() {
+  // top-level bindings (idempotent, but we don't care if we re-add once)
   $("#btn-refresh-users")?.addEventListener("click", refreshUsersTable);
   $("#admin-user-search")?.addEventListener("input", refreshUsersTable);
 
   $("#sa-userSelect")?.addEventListener("change", refreshAccessTable);
   $("#btn-add-access")?.addEventListener("click", grantAccess);
+
+  $("#ta-userSelect")?.addEventListener("change", refreshTabAccessTable);
 
   $("#btn-load-goals")?.addEventListener("click", loadGoals);
   $("#btn-save-goals")?.addEventListener("click", saveGoals);
@@ -384,6 +435,7 @@ async function bootAdmin() {
     refreshUsersTable(),
     refreshUsersForSelect(),
     refreshAccessTable(),
+    refreshTabAccessTable(),
   ]);
 }
 
@@ -397,16 +449,30 @@ async function refreshUsersForSelect() {
     $("#status").textContent = error.message;
     return;
   }
-  const sel = $("#sa-userSelect");
-  if (!sel) return;
-  sel.innerHTML = "";
+
+  const saSel = $("#sa-userSelect");
+  const taSel = $("#ta-userSelect");
+  if (saSel) saSel.innerHTML = "";
+  if (taSel) taSel.innerHTML = "";
+
   for (const u of data) {
-    const opt = document.createElement("option");
-    opt.value = u.id;
-    opt.textContent = u.email + (u.is_admin ? " (admin)" : "");
-    sel.appendChild(opt);
+    const label = u.email + (u.is_admin ? " (admin)" : "");
+    if (saSel) {
+      const opt = document.createElement("option");
+      opt.value = u.id;
+      opt.textContent = label;
+      saSel.appendChild(opt);
+    }
+    if (taSel) {
+      const opt2 = document.createElement("option");
+      opt2.value = u.id;
+      opt2.textContent = label;
+      taSel.appendChild(opt2);
+    }
   }
+
   await refreshAccessTable();
+  await refreshTabAccessTable();
 }
 
 async function refreshUsersTable() {
@@ -464,6 +530,7 @@ async function toggleAdmin(userId, currentlyAdmin) {
   }
 }
 
+// ---- Store access table ----
 async function refreshAccessTable() {
   if (!profile?.is_admin) return;
   const userId = $("#sa-userSelect").value;
@@ -498,10 +565,7 @@ async function grantAccess() {
   if (!userId || !storeId) return;
   const { error } = await supabase
     .from("store_access")
-    .upsert(
-      { user_id: userId, store_id: storeId },
-      { onConflict: "user_id,store_id" }
-    );
+    .upsert({ user_id: userId, store_id: storeId }, { onConflict: "user_id,store_id" });
   if (error) {
     $("#status").textContent = error.message;
     return;
@@ -522,68 +586,136 @@ async function removeAccess(userId, storeId) {
   await refreshAccessTable();
 }
 
+// ---- Tab Access table (Admin) ----
+async function refreshTabAccessTable() {
+  if (!profile?.is_admin) return;
+  const userId = $("#ta-userSelect")?.value;
+  if (!userId) return;
+
+  const { data, error } = await supabase
+    .from("tab_access")
+    .select("tab_key")
+    .eq("user_id", userId);
+  if (error) {
+    $("#status").textContent = error.message;
+    return;
+  }
+
+  const current = new Set((data || []).map((r) => r.tab_key));
+  const tb = $("#tbl-tab-access tbody");
+  tb.innerHTML = "";
+
+  for (const key of RESTRICTED_TABS) {
+    const hasAccess = current.has(key);
+    const labelMap = {
+      pl: "P&L",
+      "deptwalk": "Dept Walk",
+      "deptwalk-results": "Dept Walk Results & Details",
+      "pop": "POP Library & Tools",
+    };
+    const label = labelMap[key] || key;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${label}</td>
+      <td>${hasAccess ? "Yes" : "No"}</td>
+      <td>
+        <button class="secondary" data-tab="${key}" data-has="${hasAccess ? "1" : "0"}">
+          ${hasAccess ? "Revoke" : "Grant"}
+        </button>
+      </td>
+    `;
+    tr
+      .querySelector("button[data-tab]")
+      ?.addEventListener("click", () =>
+        setTabAccess(userId, key, !hasAccess)
+      );
+    tb.appendChild(tr);
+  }
+}
+
+async function setTabAccess(userId, tabKey, shouldHave) {
+  if (shouldHave) {
+    const { error } = await supabase
+      .from("tab_access")
+      .upsert({ user_id: userId, tab_key: tabKey }, { onConflict: "user_id,tab_key" });
+    if (error) {
+      $("#status").textContent = error.message;
+      return;
+    }
+  } else {
+    const { error } = await supabase
+      .from("tab_access")
+      .delete()
+      .eq("user_id", userId)
+      .eq("tab_key", tabKey);
+    if (error) {
+      $("#status").textContent = error.message;
+      return;
+    }
+  }
+  await refreshTabAccessTable();
+
+  // if we changed our own tab access, reload permissions
+  if (userId === profile.id) {
+    await loadTabPermissions();
+  }
+}
+
 // ---- Monthly Goals (monthly_goals table) ----
 async function loadGoals() {
   const storeId = $("#mg-storeSelect").value;
   const month = $("#mg-monthInput").value; // yyyy-mm
-  if (!storeId || !month) {
-    $("#mg-status").textContent = "Choose a store and month, then Load.";
-    return;
-  }
-
-  $("#mg-status").textContent = "Loading goals…";
-
+  if (!storeId || !month) return;
   const { data, error } = await supabase
     .from("monthly_goals")
     .select("store_id,month,sales_goal,txn_goal,atv_goal")
     .eq("store_id", storeId)
     .eq("month", month)
     .maybeSingle();
-
   if (error) {
-    $("#mg-status").textContent = `Error: ${error.message}`;
+    $("#mg-status").textContent = error.message;
     return;
   }
-
   $("#mg-sales").value = data?.sales_goal ?? "";
   $("#mg-txn").value = data?.txn_goal ?? "";
   $("#mg-atv").value = data?.atv_goal ?? "";
   $("#mg-status").textContent = data
-    ? "Goals loaded."
-    : "No goals saved yet for this store/month.";
+    ? `Goals loaded for store ${storeId}.`
+    : "No goals saved yet.";
 }
 
 async function saveGoals() {
   const storeId = $("#mg-storeSelect").value;
   const month = $("#mg-monthInput").value;
-  if (!storeId || !month) {
-    $("#mg-status").textContent = "Choose a store and month before saving.";
-    return;
-  }
-
   const sales = $("#mg-sales").value ? Number($("#mg-sales").value) : null;
   const txn = $("#mg-txn").value ? Number($("#mg-txn").value) : null;
   const atv = $("#mg-atv").value ? Number($("#mg-atv").value) : null;
 
-  console.log("Saving monthly goals", { storeId, month, sales, txn, atv });
-  $("#mg-status").textContent = "Saving goals…";
+  $("#mg-status").textContent = "Saving monthly goals…";
 
-  const { error } = await supabase.from("monthly_goals").upsert(
-    {
-      store_id: storeId,
-      month,
-      sales_goal: sales,
-      txn_goal: txn,
-      atv_goal: atv,
-    },
-    { onConflict: "store_id,month" }
-  );
+  console.log("Saving monthly goals", {
+    storeId,
+    month,
+    sales,
+    txn,
+    atv,
+  });
+
+  const { error } = await supabase
+    .from("monthly_goals")
+    .upsert(
+      { store_id: storeId, month, sales_goal: sales, txn_goal: txn, atv_goal: atv },
+      { onConflict: "store_id,month" }
+    );
 
   if (error) {
+    console.error("Error saving monthly goals", error);
     $("#mg-status").textContent = `Error: ${error.message}`;
-  } else {
-    $("#mg-status").textContent = `Goals saved for store ${storeId} successfully.`;
+    return;
   }
+
+  $("#mg-status").textContent = `Goals saved for store ${storeId} successfully.`;
 }
 
 // ---- minimal KPI card builder placeholders ----
@@ -644,7 +776,6 @@ function collectModalValues() {
     if (passwordResetSection) passwordResetSection.classList.remove("hidden");
   }
 
-  // "Forgot password?" click -> send reset email
   btnForgot.addEventListener("click", async () => {
     const email = emailInput.value.trim();
 
@@ -676,7 +807,6 @@ function collectModalValues() {
     }
   });
 
-  // If user arrives with a recovery hash in URL, show reset view
   if (window.location.hash && window.location.hash.includes("type=recovery")) {
     showResetView();
     showStatusMessage(
@@ -685,7 +815,7 @@ function collectModalValues() {
     );
   }
 
-  supabase.auth.onAuthStateChange((event) => {
+  supabase.auth.onAuthStateChange((event /*, session */) => {
     if (event === "PASSWORD_RECOVERY") {
       showResetView();
       showStatusMessage(
