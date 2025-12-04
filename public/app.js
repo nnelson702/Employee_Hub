@@ -121,6 +121,9 @@ function routeTo(route) {
     case "deptwalk-results":
       $("#page-deptwalk-results").classList.remove("hidden");
       break;
+    case "pop":
+      $("#page-pop").classList.remove("hidden");
+      break;
     case "admin":
       if (profile?.is_admin) {
         $("#page-admin").classList.remove("hidden");
@@ -186,16 +189,14 @@ async function populateStoreDropdowns() {
   await refreshUsersForSelect();
 }
 
-// ---------- UPDATED loadMonth (no more LIKE on date) ----------
+// ---------- loadMonth (range-based) ----------
 async function loadMonth(storeId, yyyyMM) {
-  // call your build-forecast edge function to ensure version exists
   try {
     await callBuildForecast(storeId, yyyyMM);
   } catch (e) {
-    /* non-blocking */
+    // best-effort; ignore
   }
 
-  // Parse yyyy-mm into a real date range
   const [yearStr, monthStr] = yyyyMM.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr); // 1–12
@@ -205,13 +206,11 @@ async function loadMonth(storeId, yyyyMM) {
   }
 
   const firstDay = `${yearStr}-${monthStr}-01`;
-
   const nextMonth = month === 12 ? 1 : month + 1;
   const nextYear = month === 12 ? year + 1 : year;
   const nextMonthStr = String(nextMonth).padStart(2, "0");
   const firstDayOfNextMonth = `${nextYear}-${nextMonthStr}-01`;
 
-  // get daily rows
   const { data, error } = await supabase
     .from("forecast_daily")
     .select("*")
@@ -296,7 +295,6 @@ function renderCalendar(rows, yyyyMM) {
     }</div>
     `.replace(/\s+/g, " ");
 
-    // open modal
     div.querySelector(".details")?.addEventListener("click", () =>
       openDayModal(date, row)
     );
@@ -320,19 +318,17 @@ $("#btnCloseModal")?.addEventListener("click", () => {
 });
 
 $("#btnSaveModal")?.addEventListener("click", async () => {
-  const payload = collectModalValues(); // implement using your existing inputs
+  const payload = collectModalValues();
   const { error } = await supabase.from("actual_daily").upsert(payload);
   if (error) {
     $("#status").textContent = error.message;
     return;
   }
   $("#dayModal").classList.add("hidden");
-  // re-fetch the month so the tile updates immediately (no F5)
   const month = $("#monthInput").value;
   await loadMonth(currentStoreId, month);
 });
 
-// Clear all actuals for the day
 $("#btn-clear-all")?.addEventListener("click", async () => {
   if (!modalDate) return;
   const { error } = await supabase
@@ -366,7 +362,6 @@ async function callBuildForecast(storeId, yyyyMM) {
 
 // ------ ADMIN ------
 async function bootAdmin() {
-  // top-level bindings
   $("#btn-refresh-users")?.addEventListener("click", refreshUsersTable);
   $("#admin-user-search")?.addEventListener("input", refreshUsersTable);
 
@@ -394,6 +389,7 @@ async function refreshUsersForSelect() {
     return;
   }
   const sel = $("#sa-userSelect");
+  if (!sel) return;
   sel.innerHTML = "";
   for (const u of data) {
     const opt = document.createElement("option");
@@ -419,6 +415,7 @@ async function refreshUsersTable() {
     (u) => !q || (u.email || "").toLowerCase().includes(q)
   );
   const tb = $("#tbl-users tbody");
+  if (!tb) return;
   tb.innerHTML = "";
   for (const u of rows) {
     const tr = document.createElement("tr");
@@ -454,7 +451,6 @@ async function toggleAdmin(userId, currentlyAdmin) {
   }
   await Promise.all([refreshUsersTable(), refreshUsersForSelect()]);
   if (userId === profile.id) {
-    // you changed yourself
     await loadProfile();
     $("#nav-admin").classList.toggle("hidden", !profile.is_admin);
   }
@@ -474,6 +470,7 @@ async function refreshAccessTable() {
     return;
   }
   const tb = $("#tbl-access tbody");
+  if (!tb) return;
   tb.innerHTML = "";
   for (const row of data || []) {
     const tr = document.createElement("tr");
@@ -519,12 +516,23 @@ async function removeAccess(userId, storeId) {
 }
 
 // ---- Monthly Goals (store_settings) ----
-// For now, store_settings is per-store only (no month column).
-// The month picker is UI-only until we add a dedicated monthly_goals table.
+// store_settings is per-store; month picker is for UX only right now.
 async function loadGoals() {
-  const storeId = $("#mg-storeSelect").value;
-  const month = $("#mg-monthInput").value; // yyyy-mm (for display only)
-  if (!storeId) return;
+  const storeId = $("#mg-storeSelect")?.value;
+  const month = $("#mg-monthInput")?.value; // yyyy-mm, informational
+
+  const statusEl = $("#mg-status");
+  if (!storeId) {
+    if (statusEl)
+      statusEl.textContent = "Select a store before loading goals.";
+    return;
+  }
+
+  if (statusEl) {
+    statusEl.textContent = `Loading goals for store ${storeId}${
+      month ? " (" + month + ")" : ""
+    }…`;
+  }
 
   const { data, error } = await supabase
     .from("store_settings")
@@ -533,7 +541,7 @@ async function loadGoals() {
     .maybeSingle();
 
   if (error) {
-    $("#mg-status").textContent = error.message;
+    if (statusEl) statusEl.textContent = error.message;
     return;
   }
 
@@ -541,19 +549,34 @@ async function loadGoals() {
   $("#mg-txn").value = data?.txn_goal ?? "";
   $("#mg-atv").value = data?.atv_goal ?? "";
 
-  $("#mg-status").textContent = data
-    ? `Loaded goals for store ${storeId}.`
-    : "No goals saved yet for this store.";
+  if (statusEl) {
+    statusEl.textContent = data
+      ? `Loaded goals for store ${storeId}.`
+      : `No goals saved yet for store ${storeId}.`;
+  }
 }
 
 async function saveGoals() {
-  const storeId = $("#mg-storeSelect").value;
-  const month = $("#mg-monthInput").value; // yyyy-mm (for display only)
-  if (!storeId) return;
+  const storeId = $("#mg-storeSelect")?.value;
+  const month = $("#mg-monthInput")?.value; // yyyy-mm, informational
+
+  const statusEl = $("#mg-status");
+
+  if (!storeId) {
+    if (statusEl)
+      statusEl.textContent = "Select a store before saving goals.";
+    return;
+  }
 
   const sales = $("#mg-sales").value ? Number($("#mg-sales").value) : null;
   const txn = $("#mg-txn").value ? Number($("#mg-txn").value) : null;
   const atv = $("#mg-atv").value ? Number($("#mg-atv").value) : null;
+
+  if (statusEl) {
+    statusEl.textContent = `Saving goals for store ${storeId}${
+      month ? " (" + month + ")" : ""
+    }…`;
+  }
 
   const { error } = await supabase
     .from("store_settings")
@@ -564,14 +587,14 @@ async function saveGoals() {
         txn_goal: txn,
         atv_goal: atv,
       },
-      {
-        onConflict: "store_id",
-      }
+      { onConflict: "store_id" }
     );
 
-  $("#mg-status").textContent = error
-    ? error.message
-    : `Saved goals for store ${storeId}.`;
+  if (statusEl) {
+    statusEl.textContent = error
+      ? error.message
+      : `Goals saved for store ${storeId} successfully.`;
+  }
 }
 
 // ---- minimal KPI card builder placeholders ----
@@ -581,7 +604,6 @@ function buildKpiCards(row) {
   `;
 }
 function collectModalValues() {
-  // Return the expected payload for actual_daily upsert. Adapt to your fields.
   return { store_id: currentStoreId, date: modalDate };
 }
 
@@ -589,7 +611,6 @@ function collectModalValues() {
 // Forgot password + password reset flow
 // --------------------------------------------------------
 (function setupPasswordReset() {
-  // Elements
   const emailInput = $("#email");
   const btnForgot = $("#btn-forgot");
   const authMessageEl = $("#auth-message");
@@ -634,7 +655,6 @@ function collectModalValues() {
     if (passwordResetSection) passwordResetSection.classList.remove("hidden");
   }
 
-  // "Forgot password?" click -> send reset email
   btnForgot.addEventListener("click", async () => {
     const email = emailInput.value.trim();
 
@@ -666,7 +686,6 @@ function collectModalValues() {
     }
   });
 
-  // If user arrives with a recovery hash in URL, show reset view
   if (window.location.hash && window.location.hash.includes("type=recovery")) {
     showResetView();
     showStatusMessage(
@@ -675,7 +694,6 @@ function collectModalValues() {
     );
   }
 
-  // Also handle Supabase auth state event
   supabase.auth.onAuthStateChange((event /*, session */) => {
     if (event === "PASSWORD_RECOVERY") {
       showResetView();
@@ -686,7 +704,6 @@ function collectModalValues() {
     }
   });
 
-  // Handle "Update password" button
   if (btnSetPassword) {
     btnSetPassword.addEventListener("click", async () => {
       const newPassword = newPasswordInput.value;
