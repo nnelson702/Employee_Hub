@@ -38,6 +38,7 @@ async function initAuth() {
     setupNav();
     routeTo("sales"); // default
     await populateStoreDropdowns();
+
     // load current month by default
     const now = new Date();
     $("#monthInput").value = `${now.getFullYear()}-${String(
@@ -68,6 +69,7 @@ function bindAuthButtons() {
     session = data.session;
     await initAuth();
   });
+
   $("#btn-signout")?.addEventListener("click", async () => {
     await supabase.auth.signOut();
     location.reload();
@@ -84,8 +86,11 @@ async function loadProfile() {
     $("#status").textContent = error.message;
     return;
   }
-  profile =
-    data || { id: session.user.id, email: session.user.email, is_admin: false };
+  profile = data || {
+    id: session.user.id,
+    email: session.user.email,
+    is_admin: false,
+  };
   $("#nav-admin").classList.toggle("hidden", !profile.is_admin);
 }
 
@@ -150,18 +155,19 @@ $("#btn-load")?.addEventListener("click", async () => {
 });
 
 async function populateStoreDropdowns() {
-  // use v_user_stores if you have it; fall back to join
+  // use v_user_stores if you have it; fall back to stores
   const { data, error } = await supabase
     .from("v_user_stores")
     .select("store_id, store_name")
     .order("store_id");
+
   if (error && error.code !== "PGRST116") {
     $("#status").textContent = error.message;
     return;
   }
+
   let stores = data;
   if (!stores) {
-    // fallback: join store_access with stores
     const { data: d2, error: e2 } = await supabase
       .from("stores")
       .select("store_id, store_name")
@@ -172,6 +178,7 @@ async function populateStoreDropdowns() {
     }
     stores = d2;
   }
+
   const selIds = ["storeSelect", "sa-storeSelect", "mg-storeSelect"];
   selIds.forEach((id) => {
     const sel = $("#" + id);
@@ -189,17 +196,18 @@ async function populateStoreDropdowns() {
   await refreshUsersForSelect();
 }
 
-// ---------- loadMonth (range-based) ----------
+// ---------- loadMonth (date range, not LIKE) ----------
 async function loadMonth(storeId, yyyyMM) {
+  // best-effort call to build-forecast function; ignore CORS etc
   try {
     await callBuildForecast(storeId, yyyyMM);
-  } catch (e) {
-    // best-effort; ignore
+  } catch {
+    // intentionally ignored; calendar still loads from existing rows
   }
 
   const [yearStr, monthStr] = yyyyMM.split("-");
   const year = Number(yearStr);
-  const month = Number(monthStr); // 1–12
+  const month = Number(monthStr);
   if (!year || !month) {
     $("#status").textContent = "Invalid month.";
     return;
@@ -241,7 +249,7 @@ function renderCalendar(rows, yyyyMM) {
   const cal = $("#calendar");
   cal.innerHTML = "";
   const monthStart = new Date(`${yyyyMM}-01T00:00:00`);
-  const firstDow = monthStart.getDay(); // 0 sun
+  const firstDow = monthStart.getDay(); // 0=Sun
   const daysInMonth = new Date(
     monthStart.getFullYear(),
     monthStart.getMonth() + 1,
@@ -257,6 +265,7 @@ function renderCalendar(rows, yyyyMM) {
 
   const today = new Date();
   const todayKey = today.toISOString().slice(0, 10);
+
   for (let day = 1; day <= daysInMonth; day++) {
     const date = `${yyyyMM}-${String(day).padStart(2, "0")}`;
     const row = rows.find((r) => r.date === date) || {};
@@ -266,7 +275,6 @@ function renderCalendar(rows, yyyyMM) {
     const isPast = new Date(date) < new Date(todayKey);
     div.classList.add(isPast ? "past" : "future");
 
-    // values
     const goalSales = Number(row.sales_goal || 0);
     const actSales = Number(row.sales_actual || 0);
     const goalTxn = Number(row.txn_goal || 0);
@@ -275,16 +283,14 @@ function renderCalendar(rows, yyyyMM) {
     const actAtv = Number(row.atv_actual || 0);
     const pctToGoal = goalSales > 0 ? (actSales / goalSales) * 100 : 0;
 
-    // tile coloring
     if (isPast && goalSales > 0) {
       div.classList.add(pctToGoal >= 100 ? "goal-hit" : "goal-miss");
     }
 
-    // dynamic sales font
     const salesDisplay = isPast ? fmtMoney(actSales) : fmtMoney(goalSales);
     const txnDisplay = isPast ? fmtInt(actTxn) : fmtInt(goalTxn);
     const atvDisplay = isPast ? fmtMoney(actAtv) : fmtMoney(goalAtv);
-    const pctDisplay = isPast ? `${pctToGoal.toFixed(2)}%` : ""; // future days: show nothing
+    const pctDisplay = isPast ? `${pctToGoal.toFixed(2)}%` : "";
 
     div.innerHTML = `
       <div class="num">${String(day).padStart(2, "0")} <button class="details pill">Details</button></div>
@@ -295,9 +301,9 @@ function renderCalendar(rows, yyyyMM) {
     }</div>
     `.replace(/\s+/g, " ");
 
-    div.querySelector(".details")?.addEventListener("click", () =>
-      openDayModal(date, row)
-    );
+    div
+      .querySelector(".details")
+      ?.addEventListener("click", () => openDayModal(date, row));
     cal.appendChild(div);
   }
 }
@@ -329,6 +335,7 @@ $("#btnSaveModal")?.addEventListener("click", async () => {
   await loadMonth(currentStoreId, month);
 });
 
+// Clear all actuals for the day
 $("#btn-clear-all")?.addEventListener("click", async () => {
   if (!modalDate) return;
   const { error } = await supabase
@@ -347,17 +354,19 @@ $("#btn-clear-all")?.addEventListener("click", async () => {
 
 // ---- Edge function call (best-effort) ----
 async function callBuildForecast(storeId, yyyyMM) {
-  const { error } = await fetch(`${SUPABASE_URL}/functions/v1/build-forecast`, {
+  // This may throw on CORS; caller wraps in try/catch
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/build-forecast`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
     },
     body: JSON.stringify({ storeId, month: yyyyMM }),
-  })
-    .then((r) => r.json())
-    .catch(() => ({ error: null }));
-  if (error) console.warn(error);
+  });
+  // ignore body; we only care that it doesn't explode
+  if (!res.ok) {
+    console.warn("build-forecast returned", res.status);
+  }
 }
 
 // ------ ADMIN ------
@@ -415,7 +424,6 @@ async function refreshUsersTable() {
     (u) => !q || (u.email || "").toLowerCase().includes(q)
   );
   const tb = $("#tbl-users tbody");
-  if (!tb) return;
   tb.innerHTML = "";
   for (const u of rows) {
     const tr = document.createElement("tr");
@@ -470,7 +478,6 @@ async function refreshAccessTable() {
     return;
   }
   const tb = $("#tbl-access tbody");
-  if (!tb) return;
   tb.innerHTML = "";
   for (const row of data || []) {
     const tr = document.createElement("tr");
@@ -515,56 +522,42 @@ async function removeAccess(userId, storeId) {
   await refreshAccessTable();
 }
 
-// ---- Monthly Goals (store_settings) ----
-// store_settings is per-store; month picker is for UX only right now.
+// ---- Monthly Goals (monthly_goals table) ----
 async function loadGoals() {
-  const storeId = $("#mg-storeSelect")?.value;
-  const month = $("#mg-monthInput")?.value; // yyyy-mm, informational
-
-  const statusEl = $("#mg-status");
-  if (!storeId) {
-    if (statusEl)
-      statusEl.textContent = "Select a store before loading goals.";
+  const storeId = $("#mg-storeSelect").value;
+  const month = $("#mg-monthInput").value; // yyyy-mm
+  if (!storeId || !month) {
+    $("#mg-status").textContent = "Choose a store and month, then Load.";
     return;
   }
 
-  if (statusEl) {
-    statusEl.textContent = `Loading goals for store ${storeId}${
-      month ? " (" + month + ")" : ""
-    }…`;
-  }
+  $("#mg-status").textContent = "Loading goals…";
 
   const { data, error } = await supabase
-    .from("store_settings")
-    .select("store_id,sales_goal,txn_goal,atv_goal")
+    .from("monthly_goals")
+    .select("store_id,month,sales_goal,txn_goal,atv_goal")
     .eq("store_id", storeId)
+    .eq("month", month)
     .maybeSingle();
 
   if (error) {
-    if (statusEl) statusEl.textContent = error.message;
+    $("#mg-status").textContent = `Error: ${error.message}`;
     return;
   }
 
   $("#mg-sales").value = data?.sales_goal ?? "";
   $("#mg-txn").value = data?.txn_goal ?? "";
   $("#mg-atv").value = data?.atv_goal ?? "";
-
-  if (statusEl) {
-    statusEl.textContent = data
-      ? `Loaded goals for store ${storeId}.`
-      : `No goals saved yet for store ${storeId}.`;
-  }
+  $("#mg-status").textContent = data
+    ? "Goals loaded."
+    : "No goals saved yet for this store/month.";
 }
 
 async function saveGoals() {
-  const storeId = $("#mg-storeSelect")?.value;
-  const month = $("#mg-monthInput")?.value; // yyyy-mm, informational
-
-  const statusEl = $("#mg-status");
-
-  if (!storeId) {
-    if (statusEl)
-      statusEl.textContent = "Select a store before saving goals.";
+  const storeId = $("#mg-storeSelect").value;
+  const month = $("#mg-monthInput").value;
+  if (!storeId || !month) {
+    $("#mg-status").textContent = "Choose a store and month before saving.";
     return;
   }
 
@@ -572,28 +565,24 @@ async function saveGoals() {
   const txn = $("#mg-txn").value ? Number($("#mg-txn").value) : null;
   const atv = $("#mg-atv").value ? Number($("#mg-atv").value) : null;
 
-  if (statusEl) {
-    statusEl.textContent = `Saving goals for store ${storeId}${
-      month ? " (" + month + ")" : ""
-    }…`;
-  }
+  console.log("Saving monthly goals", { storeId, month, sales, txn, atv });
+  $("#mg-status").textContent = "Saving goals…";
 
-  const { error } = await supabase
-    .from("store_settings")
-    .upsert(
-      {
-        store_id: storeId,
-        sales_goal: sales,
-        txn_goal: txn,
-        atv_goal: atv,
-      },
-      { onConflict: "store_id" }
-    );
+  const { error } = await supabase.from("monthly_goals").upsert(
+    {
+      store_id: storeId,
+      month,
+      sales_goal: sales,
+      txn_goal: txn,
+      atv_goal: atv,
+    },
+    { onConflict: "store_id,month" }
+  );
 
-  if (statusEl) {
-    statusEl.textContent = error
-      ? error.message
-      : `Goals saved for store ${storeId} successfully.`;
+  if (error) {
+    $("#mg-status").textContent = `Error: ${error.message}`;
+  } else {
+    $("#mg-status").textContent = `Goals saved for store ${storeId} successfully.`;
   }
 }
 
@@ -655,6 +644,7 @@ function collectModalValues() {
     if (passwordResetSection) passwordResetSection.classList.remove("hidden");
   }
 
+  // "Forgot password?" click -> send reset email
   btnForgot.addEventListener("click", async () => {
     const email = emailInput.value.trim();
 
@@ -686,6 +676,7 @@ function collectModalValues() {
     }
   });
 
+  // If user arrives with a recovery hash in URL, show reset view
   if (window.location.hash && window.location.hash.includes("type=recovery")) {
     showResetView();
     showStatusMessage(
@@ -694,7 +685,7 @@ function collectModalValues() {
     );
   }
 
-  supabase.auth.onAuthStateChange((event /*, session */) => {
+  supabase.auth.onAuthStateChange((event) => {
     if (event === "PASSWORD_RECOVERY") {
       showResetView();
       showStatusMessage(
