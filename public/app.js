@@ -609,9 +609,9 @@ async function refreshTabAccessTable() {
     const hasAccess = current.has(key);
     const labelMap = {
       pl: "P&L",
-      "deptwalk": "Dept Walk",
+      deptwalk: "Dept Walk",
       "deptwalk-results": "Dept Walk Results & Details",
-      "pop": "POP Library & Tools",
+      pop: "POP Library & Tools",
     };
     const label = labelMap[key] || key;
 
@@ -632,6 +632,15 @@ async function refreshTabAccessTable() {
       );
     tb.appendChild(tr);
   }
+
+  // Static row for Sales tab – always enabled, just for visibility
+  const salesRow = document.createElement("tr");
+  salesRow.innerHTML = `
+    <td>Sales Goals & Current Results</td>
+    <td>Always</td>
+    <td><span class="muted">Always enabled for all users</span></td>
+  `;
+  tb.appendChild(salesRow);
 }
 
 async function setTabAccess(userId, tabKey, shouldHave) {
