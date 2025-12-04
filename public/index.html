@@ -16,9 +16,9 @@
     };
   </script>
 
-  <link rel="stylesheet" href="./styles.css?v=2025-12-03-02" />
-  <!-- IMPORTANT: new version to bust cache -->
-  <script defer src="./app.js?v=2025-12-03-02"></script>
+  <link rel="stylesheet" href="./styles.css?v=2025-12-03-03" />
+  <!-- bump version to bust browser cache -->
+  <script defer src="./app.js?v=2025-12-03-03"></script>
 </head>
 <body>
   <header class="appbar">
@@ -93,8 +93,8 @@
     <!-- P&L (stub) -->
     <section id="page-pl" class="page hidden">
       <div class="container">
-        <h2>P&L (Coming Soon)</h2>
-        <p>We’ll render monthly P&L snapshots, variance, and drill-ins here.</p>
+        <h2>P&amp;L (Coming Soon)</h2>
+        <p>We’ll render monthly P&amp;L snapshots, variance, and drill-ins here.</p>
       </div>
     </section>
 
@@ -113,7 +113,7 @@
       </div>
     </section>
 
-    <!-- POP Library & Tools (new stub) -->
+    <!-- POP Library & Tools (stub) -->
     <section id="page-pop" class="page hidden">
       <div class="container">
         <h2>POP Library &amp; Tools (Coming Soon)</h2>
@@ -170,31 +170,56 @@
             </table>
           </div>
 
-          <!-- Monthly goals -->
+          <!-- Tab Access + Monthly goals -->
           <div class="card">
-            <h3>Monthly Goals</h3>
-            <div class="row">
-              <label>Store
-                <select id="mg-storeSelect"></select>
-              </label>
-              <label>Month
-                <input id="mg-monthInput" type="month" />
-              </label>
-              <button id="btn-load-goals" class="secondary">Load</button>
+            <h3>Tab Access &amp; Monthly Goals</h3>
+
+            <!-- Tab access management -->
+            <div class="subcard">
+              <h4>Tab Access</h4>
+              <div class="row">
+                <label>User
+                  <select id="ta-userSelect"></select>
+                </label>
+              </div>
+              <table id="tbl-tab-access" class="table">
+                <thead>
+                  <tr>
+                    <th>Tab</th>
+                    <th>Has Access?</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody><!-- filled by JS --></tbody>
+              </table>
             </div>
-            <div class="row">
-              <label>Sales Goal ($)
-                <input id="mg-sales" type="number" step="0.01" />
-              </label>
-              <label>Txn Goal
-                <input id="mg-txn" type="number" step="1" />
-              </label>
-              <label>ATV Goal ($)
-                <input id="mg-atv" type="number" step="0.01" />
-              </label>
-              <button id="btn-save-goals">Save Goals</button>
+
+            <!-- Monthly goals -->
+            <div class="subcard">
+              <h4>Monthly Goals</h4>
+              <div class="row">
+                <label>Store
+                  <select id="mg-storeSelect"></select>
+                </label>
+                <label>Month
+                  <input id="mg-monthInput" type="month" />
+                </label>
+                <button id="btn-load-goals" class="secondary">Load</button>
+              </div>
+              <div class="row">
+                <label>Sales Goal ($)
+                  <input id="mg-sales" type="number" step="0.01" />
+                </label>
+                <label>Txn Goal
+                  <input id="mg-txn" type="number" step="1" />
+                </label>
+                <label>ATV Goal ($)
+                  <input id="mg-atv" type="number" step="0.01" />
+                </label>
+                <button id="btn-save-goals">Save Goals</button>
+              </div>
+              <div id="mg-status" class="microstatus">—</div>
             </div>
-            <div id="mg-status" class="microstatus">—</div>
           </div>
         </div>
       </div>
