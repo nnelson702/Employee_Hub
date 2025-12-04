@@ -8,7 +8,7 @@
   <!-- Supabase (UMD) -->
   <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 
-  <!-- Inline config (already set to your project) -->
+  <!-- Inline config (your project) -->
   <script>
     window.APP_CONFIG = {
       SUPABASE_URL: "https://bvyrxqfffaxthrjfxjue.supabase.co",
@@ -16,8 +16,9 @@
     };
   </script>
 
-  <link rel="stylesheet" href="./styles.css?v=2025-12-02-02" />
-  <script defer src="./app.js?v=2025-12-03-01"></script>
+  <link rel="stylesheet" href="./styles.css?v=2025-12-03-02" />
+  <!-- IMPORTANT: new version to bust cache -->
+  <script defer src="./app.js?v=2025-12-03-02"></script>
 </head>
 <body>
   <header class="appbar">
@@ -31,11 +32,11 @@
   <!-- Nav -->
   <nav id="topNav" class="nav hidden">
     <button data-route="home">Home</button>
-    <button data-route="sales">Sales Goals &amp; Current Results</button>
-    <button data-route="pl">P&amp;L</button>
+    <button data-route="sales">Sales Goals & Current Results</button>
+    <button data-route="pl">P&L</button>
     <button data-route="deptwalk">Dept Walk</button>
-    <button data-route="deptwalk-results">Dept Walk Results &amp; Details</button>
-    <button data-route="pop" id="nav-pop">POP Library &amp; Tools</button>
+    <button data-route="deptwalk-results">Dept Walk Results & Details</button>
+    <button data-route="pop">POP Library &amp; Tools</button>
     <button id="nav-admin" data-route="admin" class="admin-only hidden">Admin</button>
   </nav>
 
@@ -70,7 +71,7 @@
       </div>
     </section>
 
-    <!-- Sales (existing calendar app) -->
+    <!-- Sales (calendar app) -->
     <section id="page-sales" class="page hidden">
       <div id="app" class="container">
         <div class="controls">
@@ -92,8 +93,8 @@
     <!-- P&L (stub) -->
     <section id="page-pl" class="page hidden">
       <div class="container">
-        <h2>P&amp;L (Coming Soon)</h2>
-        <p>We’ll render monthly P&amp;L snapshots, variance, and drill-ins here.</p>
+        <h2>P&L (Coming Soon)</h2>
+        <p>We’ll render monthly P&L snapshots, variance, and drill-ins here.</p>
       </div>
     </section>
 
@@ -112,13 +113,11 @@
       </div>
     </section>
 
-    <!-- POP Library & Tools (stub) -->
+    <!-- POP Library & Tools (new stub) -->
     <section id="page-pop" class="page hidden">
       <div class="container">
-        <h2>POP Library &amp; Tools</h2>
-        <p class="muted">
-          Stub for now — this will be the central home for POP assets, templates, and tools.
-        </p>
+        <h2>POP Library &amp; Tools (Coming Soon)</h2>
+        <p>This will be the home for signage templates, promo playbooks, and other tools.</p>
       </div>
     </section>
 
