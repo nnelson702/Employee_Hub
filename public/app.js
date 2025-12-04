@@ -553,7 +553,7 @@ async function refreshAccessTable() {
       <td><button class="secondary" data-remove="${row.store_id}">Remove</button></td>
     `;
     tr
-      .querySelector("button[data-remove]")
+      .querySelector("button[data-remove"])
       ?.addEventListener("click", () => removeAccess(userId, row.store_id));
     tb.appendChild(tr);
   }
@@ -696,35 +696,56 @@ async function loadGoals() {
 
 async function saveGoals() {
   const storeId = $("#mg-storeSelect").value;
-  const month = $("#mg-monthInput").value;
+  const month = $("#mg-monthInput").value;   // yyyy-mm
   const sales = $("#mg-sales").value ? Number($("#mg-sales").value) : null;
-  const txn = $("#mg-txn").value ? Number($("#mg-txn").value) : null;
-  const atv = $("#mg-atv").value ? Number($("#mg-atv").value) : null;
+  const txn   = $("#mg-txn").value   ? Number($("#mg-txn").value)   : null;
+  const atv   = $("#mg-atv").value   ? Number($("#mg-atv").value)   : null;
+
+  if (!storeId || !month) {
+    $("#mg-status").textContent = "Select a store and month first.";
+    return;
+  }
 
   $("#mg-status").textContent = "Saving monthly goals…";
 
-  console.log("Saving monthly goals", {
-    storeId,
-    month,
-    sales,
-    txn,
-    atv,
-  });
+  console.log("Saving monthly goals", { storeId, month, sales, txn, atv });
 
-  const { error } = await supabase
+  // 1) Save to monthly_goals
+  const { error: upsertError } = await supabase
     .from("monthly_goals")
     .upsert(
       { store_id: storeId, month, sales_goal: sales, txn_goal: txn, atv_goal: atv },
       { onConflict: "store_id,month" }
     );
 
-  if (error) {
-    console.error("Error saving monthly goals", error);
-    $("#mg-status").textContent = `Error: ${error.message}`;
+  if (upsertError) {
+    console.error("Error saving monthly goals", upsertError);
+    $("#mg-status").textContent = `Error: ${upsertError.message}`;
     return;
   }
 
-  $("#mg-status").textContent = `Goals saved for store ${storeId} successfully.`;
+  // 2) Apply to forecast_daily via RPC
+  const { error: rpcError } = await supabase.rpc("apply_monthly_goals", {
+    p_store_id: Number(storeId),
+    p_month: month,
+  });
+
+  if (rpcError) {
+    console.error("Error applying monthly goals", rpcError);
+    $("#mg-status").textContent =
+      `Goals saved, but daily breakdown update failed: ${rpcError.message}`;
+    return;
+  }
+
+  $("#mg-status").textContent =
+    `Goals saved and applied to daily forecast for store ${storeId}.`;
+
+  // 3) If user is currently viewing the same store + month in the calendar, refresh it
+  const uiMonth = $("#monthInput").value;
+  const uiStore = $("#storeSelect").value;
+  if (uiMonth === month && uiStore === storeId) {
+    await loadMonth(storeId, month);
+  }
 }
 
 // ---- minimal KPI card builder placeholders ----
