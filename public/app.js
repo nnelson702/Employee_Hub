@@ -84,7 +84,8 @@ async function loadProfile() {
     $("#status").textContent = error.message;
     return;
   }
-  profile = data || { id: session.user.id, email: session.user.email, is_admin: false };
+  profile =
+    data || { id: session.user.id, email: session.user.email, is_admin: false };
   $("#nav-admin").classList.toggle("hidden", !profile.is_admin);
 }
 
@@ -493,7 +494,10 @@ async function grantAccess() {
   if (!userId || !storeId) return;
   const { error } = await supabase
     .from("store_access")
-    .upsert({ user_id: userId, store_id: storeId }, { onConflict: "user_id,store_id" });
+    .upsert(
+      { user_id: userId, store_id: storeId },
+      { onConflict: "user_id,store_id" }
+    );
   if (error) {
     $("#status").textContent = error.message;
     return;
@@ -515,38 +519,59 @@ async function removeAccess(userId, storeId) {
 }
 
 // ---- Monthly Goals (store_settings) ----
+// For now, store_settings is per-store only (no month column).
+// The month picker is UI-only until we add a dedicated monthly_goals table.
 async function loadGoals() {
   const storeId = $("#mg-storeSelect").value;
-  const month = $("#mg-monthInput").value; // yyyy-mm
-  if (!storeId || !month) return;
+  const month = $("#mg-monthInput").value; // yyyy-mm (for display only)
+  if (!storeId) return;
+
   const { data, error } = await supabase
     .from("store_settings")
-    .select("store_id,month,sales_goal,txn_goal,atv_goal")
+    .select("store_id,sales_goal,txn_goal,atv_goal")
     .eq("store_id", storeId)
-    .eq("month", month)
     .maybeSingle();
+
   if (error) {
     $("#mg-status").textContent = error.message;
     return;
   }
+
   $("#mg-sales").value = data?.sales_goal ?? "";
   $("#mg-txn").value = data?.txn_goal ?? "";
   $("#mg-atv").value = data?.atv_goal ?? "";
-  $("#mg-status").textContent = data ? "Loaded." : "No goals saved yet.";
+
+  $("#mg-status").textContent = data
+    ? `Loaded goals for store ${storeId}.`
+    : "No goals saved yet for this store.";
 }
 
 async function saveGoals() {
   const storeId = $("#mg-storeSelect").value;
-  const month = $("#mg-monthInput").value;
+  const month = $("#mg-monthInput").value; // yyyy-mm (for display only)
+  if (!storeId) return;
+
   const sales = $("#mg-sales").value ? Number($("#mg-sales").value) : null;
   const txn = $("#mg-txn").value ? Number($("#mg-txn").value) : null;
   const atv = $("#mg-atv").value ? Number($("#mg-atv").value) : null;
 
-  const { error } = await supabase.from("store_settings").upsert(
-    { store_id: storeId, month, sales_goal: sales, txn_goal: txn, atv_goal: atv },
-    { onConflict: "store_id,month" }
-  );
-  $("#mg-status").textContent = error ? error.message : "Saved.";
+  const { error } = await supabase
+    .from("store_settings")
+    .upsert(
+      {
+        store_id: storeId,
+        sales_goal: sales,
+        txn_goal: txn,
+        atv_goal: atv,
+      },
+      {
+        onConflict: "store_id",
+      }
+    );
+
+  $("#mg-status").textContent = error
+    ? error.message
+    : `Saved goals for store ${storeId}.`;
 }
 
 // ---- minimal KPI card builder placeholders ----
