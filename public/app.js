@@ -40,14 +40,26 @@ async function initAuth() {
 
     await loadProfile(); // loads profile + tab permissions
     setupNav();
-    routeTo("sales"); // default
+
     await populateStoreDropdowns();
-    // load current month by default
+
+    // default month = current month
     const now = new Date();
     $("#monthInput").value = `${now.getFullYear()}-${String(
       now.getMonth() + 1
     ).padStart(2, "0")}`;
-    $("#btn-load").click();
+
+    // Auto-load on initial sign-in
+    await loadCurrentSelection();
+
+    // Hook store + month changes to reload automatically
+    $("#storeSelect")?.addEventListener("change", loadCurrentSelection);
+    $("#monthInput")?.addEventListener("change", loadCurrentSelection);
+
+    // You *can* keep the Load button as backup, but it's no longer required
+    $("#btn-load")?.addEventListener("click", loadCurrentSelection);
+
+    routeTo("sales"); // default tab
   } else {
     $("#whoami").textContent = "";
     $("#btn-signout").classList.add("hidden");
@@ -123,26 +135,26 @@ async function loadTabPermissions() {
 }
 
 function applyTabVisibility() {
-  $("#topNav button") &&
-    $$("#topNav button").forEach((btn) => {
-      const route = btn.getAttribute("data-route");
-      if (!route) return;
+  if (!$("#topNav")) return;
+  $$("#topNav button").forEach((btn) => {
+    const route = btn.getAttribute("data-route");
+    if (!route) return;
 
-      if (route === "home" || route === "sales") {
-        btn.classList.remove("hidden");
-        return;
-      }
-      if (route === "admin") {
-        btn.classList.toggle("hidden", !profile?.is_admin);
-        return;
-      }
-      btn.classList.toggle("hidden", !allowedTabs.has(route));
-    });
+    if (route === "home" || route === "sales") {
+      btn.classList.remove("hidden");
+      return;
+    }
+    if (route === "admin") {
+      btn.classList.toggle("hidden", !profile?.is_admin);
+      return;
+    }
+    btn.classList.toggle("hidden", !allowedTabs.has(route));
+  });
 }
 
 // ---------- routing ----------
 function setupNav() {
-  $("#topNav").addEventListener("click", (e) => {
+  $("#topNav")?.addEventListener("click", (e) => {
     if (e.target.matches("button[data-route]")) {
       routeTo(e.target.getAttribute("data-route"));
     }
@@ -200,30 +212,16 @@ function routeTo(route) {
 
 // ---------- sales page ----------
 
-// manual Load button
-$("#btn-load")?.addEventListener("click", async () => {
-  const storeId = $("#storeSelect").value;
-  const month = $("#monthInput").value; // yyyy-mm
-  currentStoreId = storeId;
+// shared: load whatever is currently selected in Store + Month
+async function loadCurrentSelection() {
+  const storeId = $("#storeSelect")?.value;
+  const month = $("#monthInput")?.value; // yyyy-mm
   if (!storeId || !month) return;
 
+  currentStoreId = storeId;
   $("#status").textContent = "Month loaded.";
   await loadMonth(storeId, month);
-});
-
-// auto-load when store or month changes
-["storeSelect", "monthInput"].forEach((id) => {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.addEventListener("change", async () => {
-    const storeId = $("#storeSelect").value;
-    const month = $("#monthInput").value;
-    if (!storeId || !month) return;
-    currentStoreId = storeId;
-    $("#status").textContent = "Month loaded.";
-    await loadMonth(storeId, month);
-  });
-});
+}
 
 async function populateStoreDropdowns() {
   // use v_user_stores if you have it; fall back to stores
@@ -249,8 +247,7 @@ async function populateStoreDropdowns() {
   }
   const selIds = ["storeSelect", "sa-storeSelect", "mg-storeSelect"];
   selIds.forEach((id) => {
-    const sel = "#" + id;
-    const el = document.querySelector(sel);
+    const el = document.querySelector("#" + id);
     if (!el) return;
     el.innerHTML = "";
     for (const s of stores) {
@@ -267,6 +264,13 @@ async function populateStoreDropdowns() {
 
 // ---------- loadMonth ----------
 async function loadMonth(storeId, yyyyMM) {
+  // call your build-forecast edge function to ensure version exists
+  try {
+    await callBuildForecast(storeId, yyyyMM);
+  } catch (e) {
+    // non-blocking; CORS error is expected from Cloudflare -> Supabase functions
+  }
+
   const [yearStr, monthStr] = yyyyMM.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr); // 1–12
@@ -294,17 +298,12 @@ async function loadMonth(storeId, yyyyMM) {
     return;
   }
 
-  const rows = data || [];
   console.log(
-    `Loaded ${rows.length} forecast_daily rows for store ${storeId} ${yyyyMM}`
+    `Loaded ${data.length} forecast_daily rows for store ${storeId} ${yyyyMM}`
   );
-  if (rows.length === 0) {
-    $("#status").textContent =
-      "No daily forecast found yet for this month. Once goals are applied, values will appear here.";
-  }
 
-  renderCalendar(rows, yyyyMM);
-  renderSummary(storeId, yyyyMM, rows);
+  renderCalendar(data, yyyyMM);
+  renderSummary(storeId, yyyyMM, data);
 }
 
 function renderSummary(storeId, yyyyMM, rows) {
@@ -421,6 +420,23 @@ $("#btn-clear-all")?.addEventListener("click", async () => {
   const month = $("#monthInput").value;
   await loadMonth(currentStoreId, month);
 });
+
+// ---- Edge function call (best-effort) ----
+async function callBuildForecast(storeId, yyyyMM) {
+  const { error } = await fetch(`${SUPABASE_URL}/functions/v1/build-forecast`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ storeId, month: yyyyMM }),
+  })
+    .then((r) => r.json())
+    .catch(() => ({ error: null }));
+  if (error) {
+    console.warn("build-forecast error:", error);
+  }
+}
 
 // ------ ADMIN ------
 async function bootAdmin() {
@@ -717,9 +733,15 @@ async function saveGoals() {
     return;
   }
 
-  $("#mg-status").textContent = "Saving monthly goals…";
+  console.log("Saving monthly goals", {
+    storeId,
+    month,
+    sales,
+    txn,
+    atv,
+  });
 
-  console.log("Saving monthly goals", { storeId, month, sales, txn, atv });
+  $("#mg-status").textContent = "Saving monthly goals…";
 
   // 1) Save to monthly_goals
   const { error: upsertError } = await supabase
@@ -737,8 +759,8 @@ async function saveGoals() {
 
   // 2) Apply to forecast_daily via RPC
   const { error: rpcError } = await supabase.rpc("apply_monthly_goals", {
-    p_store_id: Number(storeId),
-    p_month: month,
+    p_store_id: Number(storeId), // expects integer in DB
+    p_month: month,              // text 'YYYY-MM'
   });
 
   if (rpcError) {
