@@ -199,6 +199,8 @@ function routeTo(route) {
 }
 
 // ---------- sales page ----------
+
+// manual Load button
 $("#btn-load")?.addEventListener("click", async () => {
   const storeId = $("#storeSelect").value;
   const month = $("#monthInput").value; // yyyy-mm
@@ -207,6 +209,20 @@ $("#btn-load")?.addEventListener("click", async () => {
 
   $("#status").textContent = "Month loaded.";
   await loadMonth(storeId, month);
+});
+
+// auto-load when store or month changes
+["storeSelect", "monthInput"].forEach((id) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener("change", async () => {
+    const storeId = $("#storeSelect").value;
+    const month = $("#monthInput").value;
+    if (!storeId || !month) return;
+    currentStoreId = storeId;
+    $("#status").textContent = "Month loaded.";
+    await loadMonth(storeId, month);
+  });
 });
 
 async function populateStoreDropdowns() {
@@ -251,14 +267,6 @@ async function populateStoreDropdowns() {
 
 // ---------- loadMonth ----------
 async function loadMonth(storeId, yyyyMM) {
-  // call your build-forecast edge function to ensure version exists
-  try {
-    await callBuildForecast(storeId, yyyyMM);
-  } catch (e) {
-    // non-blocking
-    console.warn("build-forecast invoke failed (ignored):", e);
-  }
-
   const [yearStr, monthStr] = yyyyMM.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr); // 1–12
@@ -286,12 +294,17 @@ async function loadMonth(storeId, yyyyMM) {
     return;
   }
 
+  const rows = data || [];
   console.log(
-    `Loaded ${data ? data.length : 0} forecast_daily rows for store ${storeId} ${yyyyMM}`
+    `Loaded ${rows.length} forecast_daily rows for store ${storeId} ${yyyyMM}`
   );
+  if (rows.length === 0) {
+    $("#status").textContent =
+      "No daily forecast found yet for this month. Once goals are applied, values will appear here.";
+  }
 
-  renderCalendar(data || [], yyyyMM);
-  renderSummary(storeId, yyyyMM, data || []);
+  renderCalendar(rows, yyyyMM);
+  renderSummary(storeId, yyyyMM, rows);
 }
 
 function renderSummary(storeId, yyyyMM, rows) {
@@ -408,25 +421,6 @@ $("#btn-clear-all")?.addEventListener("click", async () => {
   const month = $("#monthInput").value;
   await loadMonth(currentStoreId, month);
 });
-
-// ---- Edge function call via Supabase client ----
-async function callBuildForecast(storeId, yyyyMM) {
-  try {
-    const { data, error } = await supabase.functions.invoke("build-forecast", {
-      body: {
-        storeId: Number(storeId),
-        month: yyyyMM,
-      },
-    });
-    if (error) {
-      console.warn("build-forecast error:", error);
-    } else {
-      console.log("build-forecast result:", data);
-    }
-  } catch (err) {
-    console.warn("build-forecast network/other error:", err);
-  }
-}
 
 // ------ ADMIN ------
 async function bootAdmin() {
@@ -576,7 +570,10 @@ async function grantAccess() {
   if (!userId || !storeId) return;
   const { error } = await supabase
     .from("store_access")
-    .upsert({ user_id: userId, store_id: storeId }, { onConflict: "user_id,store_id" });
+    .upsert(
+      { user_id: userId, store_id: storeId },
+      { onConflict: "user_id,store_id" }
+    );
   if (error) {
     $("#status").textContent = error.message;
     return;
@@ -658,7 +655,10 @@ async function setTabAccess(userId, tabKey, shouldHave) {
   if (shouldHave) {
     const { error } = await supabase
       .from("tab_access")
-      .upsert({ user_id: userId, tab_key: tabKey }, { onConflict: "user_id,tab_key" });
+      .upsert(
+        { user_id: userId, tab_key: tabKey },
+        { onConflict: "user_id,tab_key" }
+      );
     if (error) {
       $("#status").textContent = error.message;
       return;
