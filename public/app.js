@@ -728,7 +728,7 @@ async function saveGoals() {
 
   // 2) Apply to forecast_daily via RPC
   const { error: rpcError } = await supabase.rpc("apply_monthly_goals", {
-    p_store_id: Number(storeId),
+    p_store_id: String(storeId),
     p_month: month,
   });
 
