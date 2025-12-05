@@ -256,6 +256,7 @@ async function loadMonth(storeId, yyyyMM) {
     await callBuildForecast(storeId, yyyyMM);
   } catch (e) {
     // non-blocking
+    console.warn("build-forecast invoke failed (ignored):", e);
   }
 
   const [yearStr, monthStr] = yyyyMM.split("-");
@@ -285,8 +286,12 @@ async function loadMonth(storeId, yyyyMM) {
     return;
   }
 
-  renderCalendar(data, yyyyMM);
-  renderSummary(storeId, yyyyMM, data);
+  console.log(
+    `Loaded ${data ? data.length : 0} forecast_daily rows for store ${storeId} ${yyyyMM}`
+  );
+
+  renderCalendar(data || [], yyyyMM);
+  renderSummary(storeId, yyyyMM, data || []);
 }
 
 function renderSummary(storeId, yyyyMM, rows) {
@@ -404,19 +409,23 @@ $("#btn-clear-all")?.addEventListener("click", async () => {
   await loadMonth(currentStoreId, month);
 });
 
-// ---- Edge function call (best-effort) ----
+// ---- Edge function call via Supabase client ----
 async function callBuildForecast(storeId, yyyyMM) {
-  const { error } = await fetch(`${SUPABASE_URL}/functions/v1/build-forecast`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-    body: JSON.stringify({ storeId, month: yyyyMM }),
-  })
-    .then((r) => r.json())
-    .catch(() => ({ error: null }));
-  if (error) console.warn(error);
+  try {
+    const { data, error } = await supabase.functions.invoke("build-forecast", {
+      body: {
+        storeId: Number(storeId),
+        month: yyyyMM,
+      },
+    });
+    if (error) {
+      console.warn("build-forecast error:", error);
+    } else {
+      console.log("build-forecast result:", data);
+    }
+  } catch (err) {
+    console.warn("build-forecast network/other error:", err);
+  }
 }
 
 // ------ ADMIN ------
@@ -728,7 +737,7 @@ async function saveGoals() {
 
   // 2) Apply to forecast_daily via RPC
   const { error: rpcError } = await supabase.rpc("apply_monthly_goals", {
-    p_store_id: String(storeId),
+    p_store_id: Number(storeId),
     p_month: month,
   });
 
