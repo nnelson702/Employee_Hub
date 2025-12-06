@@ -112,20 +112,17 @@ async function loadProfile() {
 
 // ----- tab permissions -----
 async function loadTabPermissions() {
-  // base allowed tabs
   allowedTabs = new Set(["home", "sales"]);
 
   if (!profile) return;
 
   if (profile.is_admin) {
-    // admins: everything
     RESTRICTED_TABS.forEach((t) => allowedTabs.add(t));
     allowedTabs.add("admin");
     applyTabVisibility();
     return;
   }
 
-  // non-admin: read from tab_access
   const { data, error } = await supabase
     .from("tab_access")
     .select("tab_key")
@@ -167,7 +164,6 @@ function setupNav() {
 }
 
 function routeTo(route) {
-  // guard: don't allow navigating to tabs the user shouldn't see
   if (route !== "home" && route !== "sales") {
     if (route === "admin") {
       if (!profile?.is_admin) route = "home";
@@ -176,12 +172,11 @@ function routeTo(route) {
     }
   }
 
-  // toggle active
   $$("#topNav button").forEach((b) =>
     b.classList.toggle("active", b.getAttribute("data-route") === route)
   );
-  // show page
   $$(".page").forEach((p) => p.classList.add("hidden"));
+
   switch (route) {
     case "home":
       $("#page-home")?.classList.remove("hidden");
@@ -221,7 +216,7 @@ function routeTo(route) {
 // ---------- sales page ----------
 $("#btn-load")?.addEventListener("click", async () => {
   const storeId = $("#storeSelect")?.value;
-  const month = $("#monthInput")?.value; // yyyy-mm
+  const month = $("#monthInput")?.value;
   currentStoreId = storeId;
   if (!storeId || !month) return;
 
@@ -229,7 +224,6 @@ $("#btn-load")?.addEventListener("click", async () => {
   await loadMonth(storeId, month);
 });
 
-// Auto-load on store or month change
 function handleStoreOrMonthChange() {
   const storeId = $("#storeSelect")?.value;
   const month = $("#monthInput")?.value;
@@ -241,7 +235,6 @@ $("#storeSelect")?.addEventListener("change", handleStoreOrMonthChange);
 $("#monthInput")?.addEventListener("change", handleStoreOrMonthChange);
 
 async function populateStoreDropdowns() {
-  // use v_user_stores if you have it; fall back to stores
   const { data, error } = await supabase
     .from("v_user_stores")
     .select("store_id, store_name")
@@ -275,7 +268,6 @@ async function populateStoreDropdowns() {
     }
   });
 
-  // also fill user select in admin (for tab + store access)
   await refreshUsersForSelect();
 }
 
@@ -283,16 +275,13 @@ async function populateStoreDropdowns() {
 async function loadMonth(storeId, yyyyMM) {
   if (!storeId || !yyyyMM) return;
 
-  // call your build-forecast edge function to ensure version exists (best-effort)
   try {
     await callBuildForecast(storeId, yyyyMM);
-  } catch (e) {
-    // non-blocking
-  }
+  } catch {}
 
   const [yearStr, monthStr] = yyyyMM.split("-");
   const year = Number(yearStr);
-  const month = Number(monthStr); // 1–12
+  const month = Number(monthStr);
   if (!year || !month) {
     $("#status").textContent = "Invalid month.";
     return;
@@ -317,8 +306,10 @@ async function loadMonth(storeId, yyyyMM) {
     return;
   }
 
-  renderCalendar(data || [], yyyyMM);
-  renderSummary(storeId, yyyyMM, data || []);
+  const rows = data || [];
+  renderCalendar(rows, yyyyMM);
+  renderSummary(storeId, yyyyMM, rows);
+  updateDowHeaderFromRows(yyyyMM, rows);
 }
 
 function renderSummary(storeId, yyyyMM, rows) {
@@ -335,14 +326,13 @@ function renderCalendar(rows, yyyyMM) {
   if (!cal) return;
   cal.innerHTML = "";
   const monthStart = new Date(`${yyyyMM}-01T00:00:00`);
-  const firstDow = monthStart.getDay(); // 0 sun
+  const firstDow = monthStart.getDay();
   const daysInMonth = new Date(
     monthStart.getFullYear(),
     monthStart.getMonth() + 1,
     0
   ).getDate();
 
-  // pad before
   for (let i = 0; i < firstDow; i++) {
     const d = document.createElement("div");
     d.className = "day";
@@ -422,7 +412,6 @@ $("#btnSaveModal")?.addEventListener("click", async () => {
   }
 });
 
-// Clear all actuals for the day
 $("#btn-clear-all")?.addEventListener("click", async () => {
   if (!modalDate) return;
   const { error } = await supabase
@@ -457,14 +446,14 @@ async function callBuildForecast(storeId, yyyyMM) {
 }
 
 // --------------------------------------------------------
-// DAY-OF-WEEK WEIGHTS (inline over calendar)
+// DAY-OF-WEEK WEIGHTS
 // --------------------------------------------------------
 
 function getMonthMeta(yyyyMM) {
   const [yearStr, monthStr] = yyyyMM.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr);
-  const daysInMonth = new Date(year, month, 0).getDate(); // month is 1-12
+  const daysInMonth = new Date(year, month, 0).getDate();
 
   const days = [];
   for (let d = 1; d <= daysInMonth; d++) {
@@ -473,19 +462,17 @@ function getMonthMeta(yyyyMM) {
     days.push({
       date: dateStr,
       dayNum: d,
-      dow: dt.getDay(), // 0–6
+      dow: dt.getDay(),
     });
   }
   return { daysInMonth, days };
 }
 
-const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DOW_LABELS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
 
-// compute suggestions given month, monthly totals, and dow weights
 function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
   const { days } = getMonthMeta(yyyyMM);
   if (!monthlySales && !monthlyTxn) {
-    // nothing to suggest
     return days.reduce((acc, d) => {
       acc[d.date] = { sales: 0, txn: 0 };
       return acc;
@@ -515,29 +502,59 @@ function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
   return result;
 }
 
-// inject Sun–Sat row with inputs
 function setupDowWeightsRow() {
   const rowEl = $("#dow-weights-row");
   if (!rowEl) return;
-  // Only build once
   if (rowEl.childElementCount > 0) return;
 
   const cells = DOW_LABELS.map((label, idx) => {
     return `
       <div class="dow-cell">
-        <div class="dow-name">${label}</div>
-        <input
-          type="number"
-          step="0.1"
-          id="dow-weight-${idx}"
-          class="dow-weight-input"
-          value="1"
-        />
+        <div class="dow-header">
+          <span class="dow-name">${label}</span>
+          <span class="dow-current" id="dow-pct-${idx}">—</span>
+        </div>
+        <div class="dow-input-row">
+          <input
+            type="number"
+            step="0.1"
+            id="dow-weight-${idx}"
+            class="dow-weight-input"
+            value="1"
+          />
+          <span class="dow-unit">weight</span>
+        </div>
       </div>
     `;
   }).join("");
 
   rowEl.innerHTML = cells;
+}
+
+function updateDowHeaderFromRows(yyyyMM, rows) {
+  const totalsByDow = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+  let totalSales = 0;
+
+  rows.forEach((r) => {
+    const dateStr = r.date;
+    if (!dateStr) return;
+    const dt = new Date(`${dateStr}T00:00:00`);
+    const dow = dt.getDay();
+    const s = Number(r.sales_goal || 0);
+    totalsByDow[dow] += s;
+    totalSales += s;
+  });
+
+  for (let i = 0; i < 7; i++) {
+    const span = document.getElementById(`dow-pct-${i}`);
+    if (!span) continue;
+    if (!totalSales) {
+      span.textContent = "—";
+    } else {
+      const pct = (totalsByDow[i] / totalSales) * 100;
+      span.textContent = `${pct.toFixed(2)}%`;
+    }
+  }
 }
 
 async function applyDowWeightsToMonth() {
@@ -547,7 +564,7 @@ async function applyDowWeightsToMonth() {
   }
 
   const storeId = $("#storeSelect")?.value;
-  const month = $("#monthInput")?.value; // yyyy-mm
+  const month = $("#monthInput")?.value;
 
   if (!storeId || !month) {
     $("#dow-status").textContent = "Select a store and month first.";
@@ -556,7 +573,6 @@ async function applyDowWeightsToMonth() {
 
   $("#dow-status").textContent = "Loading monthly goals…";
 
-  // 1) Load monthly goals
   const { data: mg, error: mgErr } = await supabase
     .from("monthly_goals")
     .select("store_id,month,sales_goal,txn_goal")
@@ -583,14 +599,12 @@ async function applyDowWeightsToMonth() {
     return;
   }
 
-  // 2) Read DOW weights
   const dowWeights = {};
   for (let i = 0; i < 7; i++) {
     const inp = document.getElementById(`dow-weight-${i}`);
     dowWeights[i] = inp ? Number(inp.value || 1) || 1 : 1;
   }
 
-  // 3) Compute suggestions
   const suggestions = computeSuggestions(month, monthlySales, monthlyTxn, dowWeights);
   const { days } = getMonthMeta(month);
 
@@ -602,13 +616,11 @@ async function applyDowWeightsToMonth() {
       version_id: 1,
       sales_goal: sugg.sales,
       txn_goal: sugg.txn,
-      // atv_goal can be derived later if needed
     };
   });
 
   $("#dow-status").textContent = "Saving daily goals…";
 
-  // 4) Upsert into forecast_daily
   const { error } = await supabase.from("forecast_daily").upsert(payload);
 
   if (error) {
@@ -620,7 +632,6 @@ async function applyDowWeightsToMonth() {
   $("#dow-status").textContent =
     "Daily goals updated from day-of-week weights.";
 
-  // 5) Refresh calendar if viewing same store/month
   const uiMonth = $("#monthInput")?.value;
   const uiStore = $("#storeSelect")?.value;
   if (uiMonth === month && uiStore === String(storeId)) {
@@ -628,9 +639,18 @@ async function applyDowWeightsToMonth() {
   }
 }
 
+async function resetDowToEqualAndApply() {
+  for (let i = 0; i < 7; i++) {
+    const inp = document.getElementById(`dow-weight-${i}`);
+    if (inp) inp.value = "1";
+  }
+  $("#dow-status").textContent =
+    "Weights reset to equal. Applying to daily goals…";
+  await applyDowWeightsToMonth();
+}
+
 // ------ ADMIN ------
 async function bootAdmin() {
-  // top-level bindings (idempotent, but we don't care if we re-add once)
   $("#btn-refresh-users")?.addEventListener("click", refreshUsersTable);
   $("#admin-user-search")?.addEventListener("input", refreshUsersTable);
 
@@ -851,7 +871,6 @@ async function refreshTabAccessTable() {
     tb.appendChild(tr);
   }
 
-  // Static row for Sales tab – always enabled, just for visibility
   const salesRow = document.createElement("tr");
   salesRow.innerHTML = `
     <td>Sales Goals & Current Results</td>
@@ -886,16 +905,15 @@ async function setTabAccess(userId, tabKey, shouldHave) {
   }
   await refreshTabAccessTable();
 
-  // if we changed our own tab access, reload permissions
   if (userId === profile.id) {
     await loadTabPermissions();
   }
 }
 
-// ---- Monthly Goals (monthly_goals table) ----
+// ---- Monthly Goals ----
 async function loadGoals() {
   const storeId = $("#mg-storeSelect")?.value;
-  const month = $("#mg-monthInput")?.value; // yyyy-mm
+  const month = $("#mg-monthInput")?.value;
   if (!storeId || !month) return;
   const { data, error } = await supabase
     .from("monthly_goals")
@@ -917,7 +935,7 @@ async function loadGoals() {
 
 async function saveGoals() {
   const storeId = $("#mg-storeSelect")?.value;
-  const month = $("#mg-monthInput")?.value; // yyyy-mm
+  const month = $("#mg-monthInput")?.value;
   const sales = $("#mg-sales")?.value ? Number($("#mg-sales").value) : null;
   const txn = $("#mg-txn")?.value ? Number($("#mg-txn").value) : null;
   const atv = $("#mg-atv")?.value ? Number($("#mg-atv").value) : null;
@@ -928,8 +946,6 @@ async function saveGoals() {
   }
 
   $("#mg-status").textContent = "Saving monthly goals…";
-
-  console.log("Saving monthly goals", { storeId, month, sales, txn, atv });
 
   const { error } = await supabase
     .from("monthly_goals")
@@ -947,7 +963,7 @@ async function saveGoals() {
   $("#mg-status").textContent = `Goals saved for store ${storeId} successfully.`;
 }
 
-// ---- minimal KPI card builder placeholders ----
+// ---- modal KPI placeholders ----
 function buildKpiCards(row) {
   $("#modalKpis").innerHTML = `
     <div class="microstatus muted">KPI editor (unchanged from your current version).</div>
@@ -958,7 +974,7 @@ function collectModalValues() {
 }
 
 // --------------------------------------------------------
-// Forgot password + password reset flow
+// Forgot password flow
 // --------------------------------------------------------
 (function setupPasswordReset() {
   const emailInput = $("#email");
@@ -1044,7 +1060,7 @@ function collectModalValues() {
     );
   }
 
-  supabase.auth.onAuthStateChange((event /*, session */) => {
+  supabase.auth.onAuthStateChange((event) => {
     if (event === "PASSWORD_RECOVERY") {
       showResetView();
       showStatusMessage(
@@ -1100,5 +1116,6 @@ function collectModalValues() {
 // ---- start ----
 initAuth();
 
-// wire DOW apply button
+// wire DOW buttons
 $("#btn-apply-dow")?.addEventListener("click", applyDowWeightsToMonth);
+$("#btn-reset-dow")?.addEventListener("click", resetDowToEqualAndApply);
