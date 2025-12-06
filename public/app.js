@@ -17,7 +17,7 @@ const fmtInt = (n) => (n == null ? "—" : Number(n).toLocaleString());
 const fmtPct = (p) => (p == null ? "—" : `${Number(p).toFixed(2)}%`);
 
 // tabs we may restrict per-user (Home & Sales are always allowed)
-const RESTRICTED_TABS = ["pl", "deptwalk", "deptwalk-results", "pop"];
+const RESTRICTED_TABS = ["pl", "deptwalk", "deptwalk-results", "pop", "b2b", "eir"];
 let allowedTabs = new Set(["home", "sales"]);
 
 // --- state ---
@@ -33,38 +33,35 @@ async function initAuth() {
 
   if (session) {
     $("#status").textContent = "Signed in.";
-    $("#btn-signout").classList.remove("hidden");
+    $("#btn-signout")?.classList.remove("hidden");
     $("#whoami").textContent = session.user.email;
-    $("#logged-out").classList.add("hidden");
-    $("#topNav").classList.remove("hidden");
+    $("#logged-out")?.classList.add("hidden");
+    $("#topNav")?.classList.remove("hidden");
 
     await loadProfile(); // loads profile + tab permissions
     setupNav();
-
+    routeTo("sales"); // default
     await populateStoreDropdowns();
 
-    // default month = current month
+    // load current month by default
     const now = new Date();
-    $("#monthInput").value = `${now.getFullYear()}-${String(
-      now.getMonth() + 1
-    ).padStart(2, "0")}`;
+    const mval = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}`;
+    const monthInput = $("#monthInput");
+    if (monthInput) monthInput.value = mval;
 
-    // Auto-load on initial sign-in
-    await loadCurrentSelection();
-
-    // Hook store + month changes to reload automatically
-    $("#storeSelect")?.addEventListener("change", loadCurrentSelection);
-    $("#monthInput")?.addEventListener("change", loadCurrentSelection);
-
-    // You *can* keep the Load button as backup, but it's no longer required
-    $("#btn-load")?.addEventListener("click", loadCurrentSelection);
-
-    routeTo("sales"); // default tab
+    const storeSelect = $("#storeSelect");
+    if (storeSelect && monthInput && storeSelect.value) {
+      currentStoreId = storeSelect.value;
+      await loadMonth(storeSelect.value, monthInput.value);
+    }
   } else {
     $("#whoami").textContent = "";
-    $("#btn-signout").classList.add("hidden");
-    $("#topNav").classList.add("hidden");
-    $("#logged-out").classList.remove("hidden");
+    $("#btn-signout")?.classList.add("hidden");
+    $("#topNav")?.classList.add("hidden");
+    $("#logged-out")?.classList.remove("hidden");
     $("#status").textContent = "Please sign in.";
   }
 }
@@ -102,7 +99,12 @@ async function loadProfile() {
   }
   profile =
     data || { id: session.user.id, email: session.user.email, is_admin: false };
-  $("#nav-admin").classList.toggle("hidden", !profile.is_admin);
+  $("#nav-admin")?.classList.toggle("hidden", !profile.is_admin);
+
+  // show admin-only toolbar on sales if admin
+  if (profile.is_admin) {
+    $("#admin-daily-toolbar")?.classList.remove("hidden");
+  }
 
   await loadTabPermissions();
 }
@@ -135,8 +137,10 @@ async function loadTabPermissions() {
 }
 
 function applyTabVisibility() {
-  if (!$("#topNav")) return;
-  $$("#topNav button").forEach((btn) => {
+  const navButtons = $$("#topNav button");
+  if (!navButtons.length) return;
+
+  navButtons.forEach((btn) => {
     const route = btn.getAttribute("data-route");
     if (!route) return;
 
@@ -179,26 +183,29 @@ function routeTo(route) {
   $$(".page").forEach((p) => p.classList.add("hidden"));
   switch (route) {
     case "home":
-      $("#page-home").classList.remove("hidden");
+      $("#page-home")?.classList.remove("hidden");
       break;
     case "sales":
-      $("#page-sales").classList.remove("hidden");
+      $("#page-sales")?.classList.remove("hidden");
       break;
     case "pl":
-      $("#page-pl").classList.remove("hidden");
+      $("#page-pl")?.classList.remove("hidden");
       break;
     case "deptwalk":
-      $("#page-deptwalk").classList.remove("hidden");
+      $("#page-deptwalk")?.classList.remove("hidden");
       break;
     case "deptwalk-results":
-      $("#page-deptwalk-results").classList.remove("hidden");
+      $("#page-deptwalk-results")?.classList.remove("hidden");
       break;
-    case "pop":
-      $("#page-pop").classList.remove("hidden");
+    case "b2b":
+      $("#page-b2b")?.classList.remove("hidden");
+      break;
+    case "eir":
+      $("#page-eir")?.classList.remove("hidden");
       break;
     case "admin":
       if (profile?.is_admin) {
-        $("#page-admin").classList.remove("hidden");
+        $("#page-admin")?.classList.remove("hidden");
         bootAdmin();
       } else {
         $("#status").textContent = "Admin only.";
@@ -206,22 +213,31 @@ function routeTo(route) {
       }
       break;
     default:
-      $("#page-sales").classList.remove("hidden");
+      $("#page-sales")?.classList.remove("hidden");
   }
 }
 
 // ---------- sales page ----------
-
-// shared: load whatever is currently selected in Store + Month
-async function loadCurrentSelection() {
+$("#btn-load")?.addEventListener("click", async () => {
   const storeId = $("#storeSelect")?.value;
   const month = $("#monthInput")?.value; // yyyy-mm
+  currentStoreId = storeId;
   if (!storeId || !month) return;
 
-  currentStoreId = storeId;
   $("#status").textContent = "Month loaded.";
   await loadMonth(storeId, month);
+});
+
+// Auto-load on store or month change
+function handleStoreOrMonthChange() {
+  const storeId = $("#storeSelect")?.value;
+  const month = $("#monthInput")?.value;
+  if (!storeId || !month) return;
+  currentStoreId = storeId;
+  loadMonth(storeId, month);
 }
+$("#storeSelect")?.addEventListener("change", handleStoreOrMonthChange);
+$("#monthInput")?.addEventListener("change", handleStoreOrMonthChange);
 
 async function populateStoreDropdowns() {
   // use v_user_stores if you have it; fall back to stores
@@ -264,11 +280,13 @@ async function populateStoreDropdowns() {
 
 // ---------- loadMonth ----------
 async function loadMonth(storeId, yyyyMM) {
-  // call your build-forecast edge function to ensure version exists
+  if (!storeId || !yyyyMM) return;
+
+  // call your build-forecast edge function to ensure version exists (best-effort)
   try {
     await callBuildForecast(storeId, yyyyMM);
   } catch (e) {
-    // non-blocking; CORS error is expected from Cloudflare -> Supabase functions
+    // non-blocking
   }
 
   const [yearStr, monthStr] = yyyyMM.split("-");
@@ -298,12 +316,8 @@ async function loadMonth(storeId, yyyyMM) {
     return;
   }
 
-  console.log(
-    `Loaded ${data.length} forecast_daily rows for store ${storeId} ${yyyyMM}`
-  );
-
-  renderCalendar(data, yyyyMM);
-  renderSummary(storeId, yyyyMM, data);
+  renderCalendar(data || [], yyyyMM);
+  renderSummary(storeId, yyyyMM, data || []);
 }
 
 function renderSummary(storeId, yyyyMM, rows) {
@@ -317,6 +331,7 @@ function renderSummary(storeId, yyyyMM, rows) {
 
 function renderCalendar(rows, yyyyMM) {
   const cal = $("#calendar");
+  if (!cal) return;
   cal.innerHTML = "";
   const monthStart = new Date(`${yyyyMM}-01T00:00:00`);
   const firstDow = monthStart.getDay(); // 0 sun
@@ -384,11 +399,11 @@ function openDayModal(date, row) {
   modalDate = date;
   $("#modalTitle").textContent = `${date} — Day details`;
   buildKpiCards(row);
-  $("#dayModal").classList.remove("hidden");
+  $("#dayModal")?.classList.remove("hidden");
 }
 
 $("#btnCloseModal")?.addEventListener("click", () => {
-  $("#dayModal").classList.add("hidden");
+  $("#dayModal")?.classList.add("hidden");
   modalDate = null;
 });
 
@@ -399,9 +414,11 @@ $("#btnSaveModal")?.addEventListener("click", async () => {
     $("#status").textContent = error.message;
     return;
   }
-  $("#dayModal").classList.add("hidden");
-  const month = $("#monthInput").value;
-  await loadMonth(currentStoreId, month);
+  $("#dayModal")?.classList.add("hidden");
+  const month = $("#monthInput")?.value;
+  if (currentStoreId && month) {
+    await loadMonth(currentStoreId, month);
+  }
 });
 
 // Clear all actuals for the day
@@ -416,9 +433,11 @@ $("#btn-clear-all")?.addEventListener("click", async () => {
     $("#status").textContent = error.message;
     return;
   }
-  $("#dayModal").classList.add("hidden");
-  const month = $("#monthInput").value;
-  await loadMonth(currentStoreId, month);
+  $("#dayModal")?.classList.add("hidden");
+  const month = $("#monthInput")?.value;
+  if (currentStoreId && month) {
+    await loadMonth(currentStoreId, month);
+  }
 });
 
 // ---- Edge function call (best-effort) ----
@@ -433,8 +452,322 @@ async function callBuildForecast(storeId, yyyyMM) {
   })
     .then((r) => r.json())
     .catch(() => ({ error: null }));
+  if (error) console.warn(error);
+}
+
+// --------------------------------------------------------
+// DAILY PLANNER (pure JS – no RPC, no history required)
+// --------------------------------------------------------
+
+// helper: build list of dates in a yyyy-mm
+function getMonthMeta(yyyyMM) {
+  const [yearStr, monthStr] = yyyyMM.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const start = new Date(`${yyyyMM}-01T00:00:00`);
+  const daysInMonth = new Date(year, month, 0).getDate(); // month is 1-12
+
+  const days = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${yyyyMM}-${String(d).padStart(2, "0")}`;
+    const dt = new Date(`${dateStr}T00:00:00`);
+    days.push({
+      date: dateStr,
+      dayNum: d,
+      dow: dt.getDay(), // 0–6
+    });
+  }
+  return { daysInMonth, days };
+}
+
+const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// compute equal-weight suggestions given monthly totals + weights
+function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
+  const { days } = getMonthMeta(yyyyMM);
+  if (!monthlySales && !monthlyTxn) {
+    // nothing to suggest
+    return days.reduce((acc, d) => {
+      acc[d.date] = { sales: 0, txn: 0 };
+      return acc;
+    }, {});
+  }
+
+  let totalWeight = 0;
+  const perDayWeight = {};
+  days.forEach((d) => {
+    const w = Number(dowWeights[d.dow] ?? 1) || 1;
+    perDayWeight[d.date] = w;
+    totalWeight += w;
+  });
+  if (totalWeight <= 0) totalWeight = days.length;
+
+  const result = {};
+  days.forEach((d) => {
+    const w = perDayWeight[d.date];
+    const frac = w / totalWeight;
+    const s = monthlySales ? monthlySales * frac : 0;
+    const t = monthlyTxn ? monthlyTxn * frac : 0;
+    result[d.date] = {
+      sales: Math.round(s * 100) / 100,
+      txn: Math.round(t),
+    };
+  });
+  return result;
+}
+
+async function openDailyPlanner() {
+  if (!profile?.is_admin) {
+    $("#status").textContent = "Daily planner is admin-only.";
+    return;
+  }
+  const storeId = $("#storeSelect")?.value;
+  const month = $("#monthInput")?.value; // yyyy-mm
+  if (!storeId || !month) {
+    $("#status").textContent = "Choose a store and month first.";
+    return;
+  }
+
+  currentStoreId = storeId;
+
+  $("#planner-status").textContent = "Loading monthly goals…";
+
+  // load monthly goals
+  const { data: mg, error: mgErr } = await supabase
+    .from("monthly_goals")
+    .select("store_id,month,sales_goal,txn_goal,atv_goal")
+    .eq("store_id", storeId)
+    .eq("month", month)
+    .maybeSingle();
+
+  if (mgErr) {
+    $("#planner-status").textContent = `Error: ${mgErr.message}`;
+    return;
+  }
+  if (!mg) {
+    $("#planner-status").textContent =
+      "No monthly goals saved for this store/month yet (Admin > Monthly Goals).";
+    $("#dailyPlannerModal")?.classList.remove("hidden");
+    return;
+  }
+
+  const monthlySales = Number(mg.sales_goal || 0);
+  const monthlyTxn = Number(mg.txn_goal || 0);
+
+  // load any existing daily forecast rows
+  const { days } = getMonthMeta(month);
+  const firstDay = `${month}-01`;
+  const lastDay = days[days.length - 1].date;
+
+  const { data: fdRows, error: fdErr } = await supabase
+    .from("forecast_daily")
+    .select("*")
+    .eq("store_id", storeId)
+    .gte("date", firstDay)
+    .lte("date", lastDay)
+    .order("date");
+
+  if (fdErr) {
+    $("#planner-status").textContent = `Error loading daily data: ${fdErr.message}`;
+    return;
+  }
+
+  // default weights = 1 per DOW
+  const dowWeights = { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 };
+
+  // initial suggestions from monthly totals
+  let suggestions = computeSuggestions(month, monthlySales, monthlyTxn, dowWeights);
+
+  // if rows exist with non-zero goals, prefer those values as starting point
+  const existingMap = {};
+  (fdRows || []).forEach((r) => {
+    existingMap[r.date] = {
+      sales: Number(r.sales_goal || 0),
+      txn: Number(r.txn_goal || 0),
+    };
+  });
+
+  // build HTML
+  const contentEl = $("#dailyPlannerContent");
+  if (!contentEl) return;
+
+  const datesHtml = days
+    .map((d) => {
+      const existing = existingMap[d.date];
+      const sugg = suggestions[d.date] || { sales: 0, txn: 0 };
+      const salesVal =
+        existing && existing.sales > 0 ? existing.sales : sugg.sales || 0;
+      const txnVal = existing && existing.txn > 0 ? existing.txn : sugg.txn || 0;
+
+      return `
+        <tr data-date="${d.date}">
+          <td>${d.date}</td>
+          <td>${DOW_LABELS[d.dow]}</td>
+          <td>
+            <input
+              type="number"
+              step="0.01"
+              class="dp-sales"
+              value="${salesVal}"
+            />
+          </td>
+          <td>
+            <input
+              type="number"
+              step="1"
+              class="dp-txn"
+              value="${txnVal}"
+            />
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const dowInputsHtml = DOW_LABELS.map((label, idx) => {
+    return `
+      <div class="dow-row">
+        <span class="dow-label">${label}</span>
+        <input
+          type="number"
+          step="0.1"
+          id="dow-weight-${idx}"
+          class="dow-weight"
+          value="${dowWeights[idx]}"
+        />
+      </div>
+    `;
+  }).join("");
+
+  contentEl.innerHTML = `
+    <div class="planner-summary">
+      <p><strong>Store:</strong> ${storeId} &nbsp; | &nbsp; <strong>Month:</strong> ${month}</p>
+      <p><strong>Monthly Sales Goal:</strong> ${fmtMoney(
+        monthlySales
+      )} &nbsp; | &nbsp; <strong>Monthly Txn Goal:</strong> ${
+    monthlyTxn ? fmtInt(monthlyTxn) : "—"
+  }</p>
+      <p class="muted">
+        Set weights by day-of-week (Sun–Sat) and click "Recalculate suggestions" to
+        spread the monthly goals. You can then fine-tune individual days before saving.
+      </p>
+    </div>
+    <div class="planner-grid">
+      <div class="planner-dow">
+        <h3>Day-of-Week Weights</h3>
+        ${dowInputsHtml}
+      </div>
+      <div class="planner-daily">
+        <h3>Daily Breakdown</h3>
+        <table class="table dp-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>DOW</th>
+              <th>Sales Goal</th>
+              <th>Txn Goal</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${datesHtml}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  // wire buttons for reset / recalc / save
+  $("#btn-planner-reset")?.addEventListener("click", () => {
+    // reset all weights to 1 and recalc
+    for (let i = 0; i < 7; i++) {
+      const inp = document.getElementById(`dow-weight-${i}`);
+      if (inp) inp.value = "1";
+    }
+    recalcSuggestionsForPlanner(month, monthlySales, monthlyTxn);
+  });
+
+  $("#btn-planner-recalc")?.addEventListener("click", () => {
+    recalcSuggestionsForPlanner(month, monthlySales, monthlyTxn);
+  });
+
+  $("#btn-planner-save")?.addEventListener("click", async () => {
+    await saveDailyPlanner(storeId, month);
+  });
+
+  $("#btn-planner-close")?.addEventListener("click", closeDailyPlanner);
+
+  $("#plannerTitle").textContent = `Daily Goal Planner – Store ${storeId} – ${month}`;
+  $("#planner-status").textContent =
+    "Loaded. Adjust weights or daily values, then Save & Apply.";
+  $("#dailyPlannerModal")?.classList.remove("hidden");
+}
+
+function closeDailyPlanner() {
+  $("#dailyPlannerModal")?.classList.add("hidden");
+}
+
+// recompute suggestions using current dow weights and replace dp inputs
+function recalcSuggestionsForPlanner(month, monthlySales, monthlyTxn) {
+  const dowWeights = {};
+  for (let i = 0; i < 7; i++) {
+    const inp = document.getElementById(`dow-weight-${i}`);
+    dowWeights[i] = inp ? Number(inp.value || 1) || 1 : 1;
+  }
+
+  const suggestions = computeSuggestions(month, monthlySales, monthlyTxn, dowWeights);
+  const rows = $$("#dailyPlannerContent .dp-table tbody tr");
+  rows.forEach((tr) => {
+    const date = tr.getAttribute("data-date");
+    const sugg = suggestions[date] || { sales: 0, txn: 0 };
+    const sInput = tr.querySelector(".dp-sales");
+    const tInput = tr.querySelector(".dp-txn");
+    if (sInput) sInput.value = sugg.sales;
+    if (tInput) tInput.value = sugg.txn;
+  });
+
+  $("#planner-status").textContent =
+    "Suggestions recalculated from day-of-week weights. You can still tweak individual days.";
+}
+
+async function saveDailyPlanner(storeId, month) {
+  const tbodyRows = $$("#dailyPlannerContent .dp-table tbody tr");
+  if (!tbodyRows.length) return;
+
+  const payload = [];
+  tbodyRows.forEach((tr) => {
+    const date = tr.getAttribute("data-date");
+    const sInput = tr.querySelector(".dp-sales");
+    const tInput = tr.querySelector(".dp-txn");
+    const sales = sInput && sInput.value ? Number(sInput.value) : 0;
+    const txn = tInput && tInput.value ? Number(tInput.value) : 0;
+
+    payload.push({
+      store_id: Number(storeId),
+      date,
+      version_id: 1,
+      sales_goal: sales,
+      txn_goal: txn,
+      // atv_goal can stay null or be derived later
+    });
+  });
+
+  $("#planner-status").textContent = "Saving daily goals…";
+
+  const { error } = await supabase.from("forecast_daily").upsert(payload);
   if (error) {
-    console.warn("build-forecast error:", error);
+    console.error("Error saving daily goals", error);
+    $("#planner-status").textContent = `Error saving: ${error.message}`;
+    return;
+  }
+
+  $("#planner-status").textContent =
+    "Daily goals saved. Calendar will reflect these values.";
+
+  // refresh calendar if viewing same store/month
+  const uiMonth = $("#monthInput")?.value;
+  const uiStore = $("#storeSelect")?.value;
+  if (uiMonth === month && uiStore === String(storeId)) {
+    await loadMonth(storeId, month);
   }
 }
 
@@ -547,14 +880,14 @@ async function toggleAdmin(userId, currentlyAdmin) {
   await Promise.all([refreshUsersTable(), refreshUsersForSelect()]);
   if (userId === profile.id) {
     await loadProfile();
-    $("#nav-admin").classList.toggle("hidden", !profile.is_admin);
+    $("#nav-admin")?.classList.toggle("hidden", !profile.is_admin);
   }
 }
 
 // ---- Store access table ----
 async function refreshAccessTable() {
   if (!profile?.is_admin) return;
-  const userId = $("#sa-userSelect").value;
+  const userId = $("#sa-userSelect")?.value;
   if (!userId) return;
   const { data, error } = await supabase
     .from("store_access")
@@ -581,8 +914,8 @@ async function refreshAccessTable() {
 }
 
 async function grantAccess() {
-  const userId = $("#sa-userSelect").value;
-  const storeId = $("#sa-storeSelect").value;
+  const userId = $("#sa-userSelect")?.value;
+  const storeId = $("#sa-storeSelect")?.value;
   if (!userId || !storeId) return;
   const { error } = await supabase
     .from("store_access")
@@ -636,6 +969,8 @@ async function refreshTabAccessTable() {
       deptwalk: "Dept Walk",
       "deptwalk-results": "Dept Walk Results & Details",
       pop: "POP Library & Tools",
+      b2b: "B2B",
+      eir: "Employee Incident Reports",
     };
     const label = labelMap[key] || key;
 
@@ -644,7 +979,9 @@ async function refreshTabAccessTable() {
       <td>${label}</td>
       <td>${hasAccess ? "Yes" : "No"}</td>
       <td>
-        <button class="secondary" data-tab="${key}" data-has="${hasAccess ? "1" : "0"}">
+        <button class="secondary" data-tab="${key}" data-has="${
+      hasAccess ? "1" : "0"
+    }">
           ${hasAccess ? "Revoke" : "Grant"}
         </button>
       </td>
@@ -700,8 +1037,8 @@ async function setTabAccess(userId, tabKey, shouldHave) {
 
 // ---- Monthly Goals (monthly_goals table) ----
 async function loadGoals() {
-  const storeId = $("#mg-storeSelect").value;
-  const month = $("#mg-monthInput").value; // yyyy-mm
+  const storeId = $("#mg-storeSelect")?.value;
+  const month = $("#mg-monthInput")?.value; // yyyy-mm
   if (!storeId || !month) return;
   const { data, error } = await supabase
     .from("monthly_goals")
@@ -722,63 +1059,36 @@ async function loadGoals() {
 }
 
 async function saveGoals() {
-  const storeId = $("#mg-storeSelect").value;
-  const month = $("#mg-monthInput").value; // yyyy-mm
-  const sales = $("#mg-sales").value ? Number($("#mg-sales").value) : null;
-  const txn = $("#mg-txn").value ? Number($("#mg-txn").value) : null;
-  const atv = $("#mg-atv").value ? Number($("#mg-atv").value) : null;
+  const storeId = $("#mg-storeSelect")?.value;
+  const month = $("#mg-monthInput")?.value; // yyyy-mm
+  const sales = $("#mg-sales")?.value ? Number($("#mg-sales").value) : null;
+  const txn = $("#mg-txn")?.value ? Number($("#mg-txn").value) : null;
+  const atv = $("#mg-atv")?.value ? Number($("#mg-atv").value) : null;
 
   if (!storeId || !month) {
     $("#mg-status").textContent = "Select a store and month first.";
     return;
   }
 
-  console.log("Saving monthly goals", {
-    storeId,
-    month,
-    sales,
-    txn,
-    atv,
-  });
-
   $("#mg-status").textContent = "Saving monthly goals…";
 
-  // 1) Save to monthly_goals
-  const { error: upsertError } = await supabase
+  console.log("Saving monthly goals", { storeId, month, sales, txn, atv });
+
+  // Save to monthly_goals only – daily breakdown handled by Daily Planner
+  const { error } = await supabase
     .from("monthly_goals")
     .upsert(
       { store_id: storeId, month, sales_goal: sales, txn_goal: txn, atv_goal: atv },
       { onConflict: "store_id,month" }
     );
 
-  if (upsertError) {
-    console.error("Error saving monthly goals", upsertError);
-    $("#mg-status").textContent = `Error: ${upsertError.message}`;
+  if (error) {
+    console.error("Error saving monthly goals", error);
+    $("#mg-status").textContent = `Error: ${error.message}`;
     return;
   }
 
-  // 2) Apply to forecast_daily via RPC
-  const { error: rpcError } = await supabase.rpc("apply_monthly_goals", {
-    p_store_id: Number(storeId), // expects integer in DB
-    p_month: month,              // text 'YYYY-MM'
-  });
-
-  if (rpcError) {
-    console.error("Error applying monthly goals", rpcError);
-    $("#mg-status").textContent =
-      `Goals saved, but daily breakdown update failed: ${rpcError.message}`;
-    return;
-  }
-
-  $("#mg-status").textContent =
-    `Goals saved and applied to daily forecast for store ${storeId}.`;
-
-  // 3) If user is currently viewing the same store + month in the calendar, refresh it
-  const uiMonth = $("#monthInput").value;
-  const uiStore = $("#storeSelect").value;
-  if (uiMonth === month && uiStore === storeId) {
-    await loadMonth(storeId, month);
-  }
+  $("#mg-status").textContent = `Goals saved for store ${storeId} successfully.`;
 }
 
 // ---- minimal KPI card builder placeholders ----
@@ -933,3 +1243,6 @@ function collectModalValues() {
 
 // ---- start ----
 initAuth();
+
+// wire open-planner button if present
+$("#btn-open-planner")?.addEventListener("click", openDailyPlanner);
