@@ -101,9 +101,10 @@ async function loadProfile() {
     data || { id: session.user.id, email: session.user.email, is_admin: false };
   $("#nav-admin")?.classList.toggle("hidden", !profile.is_admin);
 
-  // show admin-only toolbar on sales if admin
+  // admin-only tools on sales page
   if (profile.is_admin) {
-    $("#admin-daily-toolbar")?.classList.remove("hidden");
+    $("#dow-toolbar")?.classList.remove("hidden");
+    setupDowWeightsRow();
   }
 
   await loadTabPermissions();
@@ -456,15 +457,13 @@ async function callBuildForecast(storeId, yyyyMM) {
 }
 
 // --------------------------------------------------------
-// DAILY PLANNER (pure JS – no RPC, no history required)
+// DAY-OF-WEEK WEIGHTS (inline over calendar)
 // --------------------------------------------------------
 
-// helper: build list of dates in a yyyy-mm
 function getMonthMeta(yyyyMM) {
   const [yearStr, monthStr] = yyyyMM.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr);
-  const start = new Date(`${yyyyMM}-01T00:00:00`);
   const daysInMonth = new Date(year, month, 0).getDate(); // month is 1-12
 
   const days = [];
@@ -482,7 +481,7 @@ function getMonthMeta(yyyyMM) {
 
 const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// compute equal-weight suggestions given monthly totals + weights
+// compute suggestions given month, monthly totals, and dow weights
 function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
   const { days } = getMonthMeta(yyyyMM);
   if (!monthlySales && !monthlyTxn) {
@@ -516,254 +515,112 @@ function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
   return result;
 }
 
-async function openDailyPlanner() {
+// inject Sun–Sat row with inputs
+function setupDowWeightsRow() {
+  const rowEl = $("#dow-weights-row");
+  if (!rowEl) return;
+  // Only build once
+  if (rowEl.childElementCount > 0) return;
+
+  const cells = DOW_LABELS.map((label, idx) => {
+    return `
+      <div class="dow-cell">
+        <div class="dow-name">${label}</div>
+        <input
+          type="number"
+          step="0.1"
+          id="dow-weight-${idx}"
+          class="dow-weight-input"
+          value="1"
+        />
+      </div>
+    `;
+  }).join("");
+
+  rowEl.innerHTML = cells;
+}
+
+async function applyDowWeightsToMonth() {
   if (!profile?.is_admin) {
-    $("#status").textContent = "Daily planner is admin-only.";
+    $("#dow-status").textContent = "Day-of-week weights are admin-only.";
     return;
   }
+
   const storeId = $("#storeSelect")?.value;
   const month = $("#monthInput")?.value; // yyyy-mm
+
   if (!storeId || !month) {
-    $("#status").textContent = "Choose a store and month first.";
+    $("#dow-status").textContent = "Select a store and month first.";
     return;
   }
 
-  currentStoreId = storeId;
+  $("#dow-status").textContent = "Loading monthly goals…";
 
-  $("#planner-status").textContent = "Loading monthly goals…";
-
-  // load monthly goals
+  // 1) Load monthly goals
   const { data: mg, error: mgErr } = await supabase
     .from("monthly_goals")
-    .select("store_id,month,sales_goal,txn_goal,atv_goal")
+    .select("store_id,month,sales_goal,txn_goal")
     .eq("store_id", storeId)
     .eq("month", month)
     .maybeSingle();
 
   if (mgErr) {
-    $("#planner-status").textContent = `Error: ${mgErr.message}`;
+    $("#dow-status").textContent = `Error loading monthly goals: ${mgErr.message}`;
     return;
   }
   if (!mg) {
-    $("#planner-status").textContent =
-      "No monthly goals saved for this store/month yet (Admin > Monthly Goals).";
-    $("#dailyPlannerModal")?.classList.remove("hidden");
+    $("#dow-status").textContent =
+      "No monthly goals saved yet (Admin > Monthly Goals).";
     return;
   }
 
   const monthlySales = Number(mg.sales_goal || 0);
   const monthlyTxn = Number(mg.txn_goal || 0);
 
-  // load any existing daily forecast rows
-  const { days } = getMonthMeta(month);
-  const firstDay = `${month}-01`;
-  const lastDay = days[days.length - 1].date;
-
-  const { data: fdRows, error: fdErr } = await supabase
-    .from("forecast_daily")
-    .select("*")
-    .eq("store_id", storeId)
-    .gte("date", firstDay)
-    .lte("date", lastDay)
-    .order("date");
-
-  if (fdErr) {
-    $("#planner-status").textContent = `Error loading daily data: ${fdErr.message}`;
+  if (!monthlySales && !monthlyTxn) {
+    $("#dow-status").textContent =
+      "Monthly goals are zero or empty. Set goals in Admin first.";
     return;
   }
 
-  // default weights = 1 per DOW
-  const dowWeights = { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 };
-
-  // initial suggestions from monthly totals
-  let suggestions = computeSuggestions(month, monthlySales, monthlyTxn, dowWeights);
-
-  // if rows exist with non-zero goals, prefer those values as starting point
-  const existingMap = {};
-  (fdRows || []).forEach((r) => {
-    existingMap[r.date] = {
-      sales: Number(r.sales_goal || 0),
-      txn: Number(r.txn_goal || 0),
-    };
-  });
-
-  // build HTML
-  const contentEl = $("#dailyPlannerContent");
-  if (!contentEl) return;
-
-  const datesHtml = days
-    .map((d) => {
-      const existing = existingMap[d.date];
-      const sugg = suggestions[d.date] || { sales: 0, txn: 0 };
-      const salesVal =
-        existing && existing.sales > 0 ? existing.sales : sugg.sales || 0;
-      const txnVal = existing && existing.txn > 0 ? existing.txn : sugg.txn || 0;
-
-      return `
-        <tr data-date="${d.date}">
-          <td>${d.date}</td>
-          <td>${DOW_LABELS[d.dow]}</td>
-          <td>
-            <input
-              type="number"
-              step="0.01"
-              class="dp-sales"
-              value="${salesVal}"
-            />
-          </td>
-          <td>
-            <input
-              type="number"
-              step="1"
-              class="dp-txn"
-              value="${txnVal}"
-            />
-          </td>
-        </tr>
-      `;
-    })
-    .join("");
-
-  const dowInputsHtml = DOW_LABELS.map((label, idx) => {
-    return `
-      <div class="dow-row">
-        <span class="dow-label">${label}</span>
-        <input
-          type="number"
-          step="0.1"
-          id="dow-weight-${idx}"
-          class="dow-weight"
-          value="${dowWeights[idx]}"
-        />
-      </div>
-    `;
-  }).join("");
-
-  contentEl.innerHTML = `
-    <div class="planner-summary">
-      <p><strong>Store:</strong> ${storeId} &nbsp; | &nbsp; <strong>Month:</strong> ${month}</p>
-      <p><strong>Monthly Sales Goal:</strong> ${fmtMoney(
-        monthlySales
-      )} &nbsp; | &nbsp; <strong>Monthly Txn Goal:</strong> ${
-    monthlyTxn ? fmtInt(monthlyTxn) : "—"
-  }</p>
-      <p class="muted">
-        Set weights by day-of-week (Sun–Sat) and click "Recalculate suggestions" to
-        spread the monthly goals. You can then fine-tune individual days before saving.
-      </p>
-    </div>
-    <div class="planner-grid">
-      <div class="planner-dow">
-        <h3>Day-of-Week Weights</h3>
-        ${dowInputsHtml}
-      </div>
-      <div class="planner-daily">
-        <h3>Daily Breakdown</h3>
-        <table class="table dp-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>DOW</th>
-              <th>Sales Goal</th>
-              <th>Txn Goal</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${datesHtml}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-
-  // wire buttons for reset / recalc / save
-  $("#btn-planner-reset")?.addEventListener("click", () => {
-    // reset all weights to 1 and recalc
-    for (let i = 0; i < 7; i++) {
-      const inp = document.getElementById(`dow-weight-${i}`);
-      if (inp) inp.value = "1";
-    }
-    recalcSuggestionsForPlanner(month, monthlySales, monthlyTxn);
-  });
-
-  $("#btn-planner-recalc")?.addEventListener("click", () => {
-    recalcSuggestionsForPlanner(month, monthlySales, monthlyTxn);
-  });
-
-  $("#btn-planner-save")?.addEventListener("click", async () => {
-    await saveDailyPlanner(storeId, month);
-  });
-
-  $("#btn-planner-close")?.addEventListener("click", closeDailyPlanner);
-
-  $("#plannerTitle").textContent = `Daily Goal Planner – Store ${storeId} – ${month}`;
-  $("#planner-status").textContent =
-    "Loaded. Adjust weights or daily values, then Save & Apply.";
-  $("#dailyPlannerModal")?.classList.remove("hidden");
-}
-
-function closeDailyPlanner() {
-  $("#dailyPlannerModal")?.classList.add("hidden");
-}
-
-// recompute suggestions using current dow weights and replace dp inputs
-function recalcSuggestionsForPlanner(month, monthlySales, monthlyTxn) {
+  // 2) Read DOW weights
   const dowWeights = {};
   for (let i = 0; i < 7; i++) {
     const inp = document.getElementById(`dow-weight-${i}`);
     dowWeights[i] = inp ? Number(inp.value || 1) || 1 : 1;
   }
 
+  // 3) Compute suggestions
   const suggestions = computeSuggestions(month, monthlySales, monthlyTxn, dowWeights);
-  const rows = $$("#dailyPlannerContent .dp-table tbody tr");
-  rows.forEach((tr) => {
-    const date = tr.getAttribute("data-date");
-    const sugg = suggestions[date] || { sales: 0, txn: 0 };
-    const sInput = tr.querySelector(".dp-sales");
-    const tInput = tr.querySelector(".dp-txn");
-    if (sInput) sInput.value = sugg.sales;
-    if (tInput) tInput.value = sugg.txn;
-  });
+  const { days } = getMonthMeta(month);
 
-  $("#planner-status").textContent =
-    "Suggestions recalculated from day-of-week weights. You can still tweak individual days.";
-}
-
-async function saveDailyPlanner(storeId, month) {
-  const tbodyRows = $$("#dailyPlannerContent .dp-table tbody tr");
-  if (!tbodyRows.length) return;
-
-  const payload = [];
-  tbodyRows.forEach((tr) => {
-    const date = tr.getAttribute("data-date");
-    const sInput = tr.querySelector(".dp-sales");
-    const tInput = tr.querySelector(".dp-txn");
-    const sales = sInput && sInput.value ? Number(sInput.value) : 0;
-    const txn = tInput && tInput.value ? Number(tInput.value) : 0;
-
-    payload.push({
+  const payload = days.map((d) => {
+    const sugg = suggestions[d.date] || { sales: 0, txn: 0 };
+    return {
       store_id: Number(storeId),
-      date,
+      date: d.date,
       version_id: 1,
-      sales_goal: sales,
-      txn_goal: txn,
-      // atv_goal can stay null or be derived later
-    });
+      sales_goal: sugg.sales,
+      txn_goal: sugg.txn,
+      // atv_goal can be derived later if needed
+    };
   });
 
-  $("#planner-status").textContent = "Saving daily goals…";
+  $("#dow-status").textContent = "Saving daily goals…";
 
+  // 4) Upsert into forecast_daily
   const { error } = await supabase.from("forecast_daily").upsert(payload);
+
   if (error) {
-    console.error("Error saving daily goals", error);
-    $("#planner-status").textContent = `Error saving: ${error.message}`;
+    console.error("Error saving daily goals from DOW weights", error);
+    $("#dow-status").textContent = `Error saving: ${error.message}`;
     return;
   }
 
-  $("#planner-status").textContent =
-    "Daily goals saved. Calendar will reflect these values.";
+  $("#dow-status").textContent =
+    "Daily goals updated from day-of-week weights.";
 
-  // refresh calendar if viewing same store/month
+  // 5) Refresh calendar if viewing same store/month
   const uiMonth = $("#monthInput")?.value;
   const uiStore = $("#storeSelect")?.value;
   if (uiMonth === month && uiStore === String(storeId)) {
@@ -1074,7 +931,6 @@ async function saveGoals() {
 
   console.log("Saving monthly goals", { storeId, month, sales, txn, atv });
 
-  // Save to monthly_goals only – daily breakdown handled by Daily Planner
   const { error } = await supabase
     .from("monthly_goals")
     .upsert(
@@ -1244,5 +1100,5 @@ function collectModalValues() {
 // ---- start ----
 initAuth();
 
-// wire open-planner button if present
-$("#btn-open-planner")?.addEventListener("click", openDailyPlanner);
+// wire DOW apply button
+$("#btn-apply-dow")?.addEventListener("click", applyDowWeightsToMonth);
