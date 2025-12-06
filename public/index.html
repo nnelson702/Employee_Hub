@@ -8,7 +8,7 @@
   <!-- Supabase (UMD) -->
   <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 
-  <!-- Inline config (your project) -->
+  <!-- Inline config -->
   <script>
     window.APP_CONFIG = {
       SUPABASE_URL: "https://bvyrxqfffaxthrjfxjue.supabase.co",
@@ -16,9 +16,8 @@
     };
   </script>
 
-  <link rel="stylesheet" href="./styles.css?v=2025-12-03-03" />
-  <!-- bump version to bust browser cache -->
-  <script defer src="./app.js?v=2025-12-03-03"></script>
+  <link rel="stylesheet" href="./styles.css?v=2025-12-02-02" />
+  <script defer src="./app.js?v=2025-12-06-01"></script>
 </head>
 <body>
   <header class="appbar">
@@ -36,7 +35,8 @@
     <button data-route="pl">P&L</button>
     <button data-route="deptwalk">Dept Walk</button>
     <button data-route="deptwalk-results">Dept Walk Results & Details</button>
-    <button data-route="pop">POP Library &amp; Tools</button>
+    <button data-route="b2b">B2B</button>
+    <button data-route="eir">EIR – Incident Reports</button>
     <button id="nav-admin" data-route="admin" class="admin-only hidden">Admin</button>
   </nav>
 
@@ -85,6 +85,14 @@
             <button id="btn-load">Load</button>
           </div>
         </div>
+
+        <!-- Admin-only tools for daily planner -->
+        <div id="admin-daily-toolbar" class="row hidden">
+          <button id="btn-open-planner" class="secondary">
+            Daily Goal Planner
+          </button>
+        </div>
+
         <div id="summary" class="summary">—</div>
         <div id="calendar" class="calendar"></div>
       </div>
@@ -93,8 +101,8 @@
     <!-- P&L (stub) -->
     <section id="page-pl" class="page hidden">
       <div class="container">
-        <h2>P&amp;L (Coming Soon)</h2>
-        <p>We’ll render monthly P&amp;L snapshots, variance, and drill-ins here.</p>
+        <h2>P&L (Coming Soon)</h2>
+        <p>We’ll render monthly P&L snapshots, variance, and drill-ins here.</p>
       </div>
     </section>
 
@@ -109,15 +117,23 @@
     <!-- Dept Walk Results (stub) -->
     <section id="page-deptwalk-results" class="page hidden">
       <div class="container">
-        <h2>Dept Walk Results &amp; Details (Coming Soon)</h2>
+        <h2>Dept Walk Results & Details (Coming Soon)</h2>
       </div>
     </section>
 
-    <!-- POP Library & Tools (stub) -->
-    <section id="page-pop" class="page hidden">
+    <!-- B2B (stub) -->
+    <section id="page-b2b" class="page hidden">
       <div class="container">
-        <h2>POP Library &amp; Tools (Coming Soon)</h2>
-        <p>This will be the home for signage templates, promo playbooks, and other tools.</p>
+        <h2>B2B (Coming Soon)</h2>
+        <p>This space will support outside sales, in-store B2B tools, and reporting.</p>
+      </div>
+    </section>
+
+    <!-- EIR (stub) -->
+    <section id="page-eir" class="page hidden">
+      <div class="container">
+        <h2>Employee Incident Reports (Coming Soon)</h2>
+        <p>Employees will be able to document issues, route them by type, and track follow-up status.</p>
       </div>
     </section>
 
@@ -170,56 +186,31 @@
             </table>
           </div>
 
-          <!-- Tab Access + Monthly goals -->
+          <!-- Monthly goals -->
           <div class="card">
-            <h3>Tab Access &amp; Monthly Goals</h3>
-
-            <!-- Tab access management -->
-            <div class="subcard">
-              <h4>Tab Access</h4>
-              <div class="row">
-                <label>User
-                  <select id="ta-userSelect"></select>
-                </label>
-              </div>
-              <table id="tbl-tab-access" class="table">
-                <thead>
-                  <tr>
-                    <th>Tab</th>
-                    <th>Has Access?</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody><!-- filled by JS --></tbody>
-              </table>
+            <h3>Monthly Goals</h3>
+            <div class="row">
+              <label>Store
+                <select id="mg-storeSelect"></select>
+              </label>
+              <label>Month
+                <input id="mg-monthInput" type="month" />
+              </label>
+              <button id="btn-load-goals" class="secondary">Load</button>
             </div>
-
-            <!-- Monthly goals -->
-            <div class="subcard">
-              <h4>Monthly Goals</h4>
-              <div class="row">
-                <label>Store
-                  <select id="mg-storeSelect"></select>
-                </label>
-                <label>Month
-                  <input id="mg-monthInput" type="month" />
-                </label>
-                <button id="btn-load-goals" class="secondary">Load</button>
-              </div>
-              <div class="row">
-                <label>Sales Goal ($)
-                  <input id="mg-sales" type="number" step="0.01" />
-                </label>
-                <label>Txn Goal
-                  <input id="mg-txn" type="number" step="1" />
-                </label>
-                <label>ATV Goal ($)
-                  <input id="mg-atv" type="number" step="0.01" />
-                </label>
-                <button id="btn-save-goals">Save Goals</button>
-              </div>
-              <div id="mg-status" class="microstatus">—</div>
+            <div class="row">
+              <label>Sales Goal ($)
+                <input id="mg-sales" type="number" step="0.01" />
+              </label>
+              <label>Txn Goal
+                <input id="mg-txn" type="number" step="1" />
+              </label>
+              <label>ATV Goal ($)
+                <input id="mg-atv" type="number" step="0.01" />
+              </label>
+              <button id="btn-save-goals">Save Goals</button>
             </div>
+            <div id="mg-status" class="microstatus">—</div>
           </div>
         </div>
       </div>
@@ -240,7 +231,24 @@
     <div id="reset-message" class="auth-message"></div>
   </section>
 
-  <!-- Day modal -->
+  <!-- Daily Planner Modal -->
+  <div id="dailyPlannerModal" class="modal hidden" aria-hidden="true">
+    <div class="sheet">
+      <header>
+        <h2 id="plannerTitle" style="margin:0">Daily Goal Planner</h2>
+        <button id="btn-planner-close" class="close small">Close</button>
+      </header>
+      <div id="dailyPlannerContent"></div>
+      <div class="actions">
+        <button id="btn-planner-reset" class="secondary">Reset to equal days</button>
+        <button id="btn-planner-recalc" class="secondary">Recalculate suggestions</button>
+        <button id="btn-planner-save" class="save">Save & Apply</button>
+      </div>
+      <div id="planner-status" class="microstatus"></div>
+    </div>
+  </div>
+
+  <!-- Day modal (unchanged) -->
   <div id="dayModal" class="modal hidden" aria-hidden="true">
     <div class="sheet">
       <header>
