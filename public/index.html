@@ -17,7 +17,7 @@
   </script>
 
   <link rel="stylesheet" href="./styles.css?v=2025-12-02-02" />
-  <script defer src="./app.js?v=2025-12-06-01"></script>
+  <script defer src="./app.js?v=2025-12-06-02"></script>
 </head>
 <body>
   <header class="appbar">
@@ -86,11 +86,17 @@
           </div>
         </div>
 
-        <!-- Admin-only tools for daily planner -->
-        <div id="admin-daily-toolbar" class="row hidden">
-          <button id="btn-open-planner" class="secondary">
-            Daily Goal Planner
-          </button>
+        <!-- Admin-only day-of-week weights over the calendar -->
+        <div id="dow-toolbar" class="dow-toolbar hidden">
+          <div class="dow-weights" id="dow-weights-row">
+            <!-- JS will inject Sun–Sat inputs here -->
+          </div>
+          <div class="dow-actions">
+            <button id="btn-apply-dow" class="secondary">
+              Apply weights to month
+            </button>
+            <span id="dow-status" class="microstatus"></span>
+          </div>
         </div>
 
         <div id="summary" class="summary">—</div>
@@ -230,23 +236,6 @@
 
     <div id="reset-message" class="auth-message"></div>
   </section>
-
-  <!-- Daily Planner Modal -->
-  <div id="dailyPlannerModal" class="modal hidden" aria-hidden="true">
-    <div class="sheet">
-      <header>
-        <h2 id="plannerTitle" style="margin:0">Daily Goal Planner</h2>
-        <button id="btn-planner-close" class="close small">Close</button>
-      </header>
-      <div id="dailyPlannerContent"></div>
-      <div class="actions">
-        <button id="btn-planner-reset" class="secondary">Reset to equal days</button>
-        <button id="btn-planner-recalc" class="secondary">Recalculate suggestions</button>
-        <button id="btn-planner-save" class="save">Save & Apply</button>
-      </div>
-      <div id="planner-status" class="microstatus"></div>
-    </div>
-  </div>
 
   <!-- Day modal (unchanged) -->
   <div id="dayModal" class="modal hidden" aria-hidden="true">
