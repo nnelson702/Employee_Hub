@@ -17,7 +17,7 @@
   </script>
 
   <link rel="stylesheet" href="./styles.css?v=2025-12-02-02" />
-  <script defer src="./app.js?v=2025-12-06-02"></script>
+  <script defer src="./app.js?v=2025-12-06-03"></script>
 </head>
 <body>
   <header class="appbar">
@@ -63,7 +63,7 @@
   <!-- Pages -->
   <main>
 
-    <!-- Home (stub) -->
+    <!-- Home -->
     <section id="page-home" class="page hidden">
       <div class="container">
         <h2>Welcome</h2>
@@ -86,14 +86,17 @@
           </div>
         </div>
 
-        <!-- Admin-only day-of-week weights over the calendar -->
+        <!-- Admin-only day-of-week weights aligned over calendar -->
         <div id="dow-toolbar" class="dow-toolbar hidden">
           <div class="dow-weights" id="dow-weights-row">
-            <!-- JS will inject Sun–Sat inputs here -->
+            <!-- JS injects SUNDAY–SATURDAY cells here -->
           </div>
           <div class="dow-actions">
             <button id="btn-apply-dow" class="secondary">
-              Apply weights to month
+              Apply to daily goals
+            </button>
+            <button id="btn-reset-dow" class="secondary">
+              Reset to equal & apply
             </button>
             <span id="dow-status" class="microstatus"></span>
           </div>
@@ -165,7 +168,7 @@
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody><!-- filled by JS --></tbody>
+              <tbody></tbody>
             </table>
           </div>
 
@@ -188,7 +191,7 @@
                   <th>Action</th>
                 </tr>
               </thead>
-              <tbody><!-- filled by JS --></tbody>
+              <tbody></tbody>
             </table>
           </div>
 
@@ -237,7 +240,7 @@
     <div id="reset-message" class="auth-message"></div>
   </section>
 
-  <!-- Day modal (unchanged) -->
+  <!-- Day modal -->
   <div id="dayModal" class="modal hidden" aria-hidden="true">
     <div class="sheet">
       <header>
