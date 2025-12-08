@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -19,6 +20,7 @@
   <link rel="stylesheet" href="./styles.css?v=2025-12-02-02" />
   <script defer src="./app.js?v=2025-12-06-03"></script>
 </head>
+
 <body>
   <header class="appbar">
     <h1>Sales Forecasting</h1>
@@ -86,24 +88,26 @@
           </div>
         </div>
 
-        <!-- Admin-only day-of-week weights aligned over calendar -->
-        <div id="dow-toolbar" class="dow-toolbar hidden">
-          <div class="dow-weights" id="dow-weights-row">
-            <!-- JS injects SUNDAY–SATURDAY cells here -->
+        <div class="month-layout">
+          <!-- Day-of-week weights aligned over calendar -->
+          <div id="dow-toolbar" class="dow-toolbar hidden">
+            <div class="dow-weights" id="dow-weights-row">
+              <!-- JS injects SUNDAY–SATURDAY cells here -->
+            </div>
+            <div class="dow-actions">
+              <button id="btn-apply-dow" class="secondary">
+                Apply to daily goals
+              </button>
+              <button id="btn-reset-dow" class="secondary">
+                Reset to equal & apply
+              </button>
+              <span id="dow-status" class="microstatus"></span>
+            </div>
           </div>
-          <div class="dow-actions">
-            <button id="btn-apply-dow" class="secondary">
-              Apply to daily goals
-            </button>
-            <button id="btn-reset-dow" class="secondary">
-              Reset to equal & apply
-            </button>
-            <span id="dow-status" class="microstatus"></span>
-          </div>
-        </div>
 
-        <div id="summary" class="summary">—</div>
-        <div id="calendar" class="calendar"></div>
+          <div id="summary" class="summary">—</div>
+          <div id="calendar" class="calendar"></div>
+        </div>
       </div>
     </section>
 
@@ -256,4 +260,5 @@
     </div>
   </div>
 </body>
+
 </html>
