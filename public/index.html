@@ -35,6 +35,7 @@
     <button data-route="deptwalk-results">Dept Walk Results &amp; Details</button>
     <button data-route="b2b">B2B</button>
     <button data-route="eir">EIR – Incident Reports</button>
+    <button data-route="pop">Library &amp; POP Tools</button>
     <button id="nav-admin" data-route="admin" class="admin-only hidden">Admin</button>
   </nav>
   <!-- Status bar -->
@@ -60,6 +61,10 @@
       <div class="container">
         <h2>Communications Hub</h2>
         <p class="muted">Pinned announcements, role‑based posts, comments and reactions.</p>
+        <!-- Add post button for creating new announcements -->
+        <div class="row" style="justify-content:flex-end;margin-bottom:12px;">
+          <button id="btn-add-post" class="primary">Add Post</button>
+        </div>
         <div class="feed">
           <!-- Example pinned post -->
           <div class="post-card pinned">
@@ -103,9 +108,7 @@
           <label>Month
             <input id="monthInput" type="month" />
           </label>
-          <div>
-            <button id="btn-load">Load</button>
-          </div>
+          <!-- No explicit load button; data loads automatically when selections change -->
         </div>
         <div class="month-layout">
           <!-- Day-of-week weights aligned over calendar -->
@@ -333,6 +336,39 @@
         </div>
       </div>
     </section>
+
+    <!-- Library & POP Tools -->
+    <section id="page-pop" class="page hidden">
+      <div class="container">
+        <h2>Library &amp; POP Tools</h2>
+        <p class="muted">Browse documents by category and generate POP signs.</p>
+        <div class="card">
+          <h3>Document Library</h3>
+          <table class="table">
+            <thead><tr><th>Name</th><th>Category</th><th>Uploaded</th><th>Actions</th></tr></thead>
+            <tbody>
+              <tr><td>Holiday Planogram.pdf</td><td>Planogram</td><td>11/28</td><td><button class="small secondary">Download</button></td></tr>
+              <tr><td>Safety Training.docx</td><td>Safety</td><td>10/15</td><td><button class="small secondary">Download</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Create POP Sign</h3>
+          <div class="row">
+            <label>Product Name
+              <input type="text" placeholder="e.g. Hammer" />
+            </label>
+            <label>Price ($)
+              <input type="number" step="0.01" placeholder="0.00" />
+            </label>
+          </div>
+          <label>Upload Image
+            <input type="file" accept="image/*" />
+          </label>
+          <button class="secondary">Generate Sign</button>
+        </div>
+      </div>
+    </section>
     <!-- Admin -->
     <section id="page-admin" class="page hidden">
       <div class="container">
@@ -453,6 +489,31 @@
       <div class="actions">
         <button id="btnCloseModal" class="close">Close</button>
         <button id="btnSaveModal" class="save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Post modal -->
+  <div id="postModal" class="modal hidden" aria-hidden="true">
+    <div class="sheet">
+      <header style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="margin:0">Create Post</h2>
+        <button id="btnClosePost" class="close">Close</button>
+      </header>
+      <div class="post-form" style="margin-top:12px;display:flex;flex-direction:column;gap:10px;">
+        <label>Title
+          <input id="post-title" type="text" placeholder="Enter a title" />
+        </label>
+        <label>Message
+          <textarea id="post-body" rows="4" placeholder="Write your update or announcement…"></textarea>
+        </label>
+        <label>Attachment
+          <input id="post-file" type="file" />
+        </label>
+      </div>
+      <div class="actions" style="display:flex;justify-content:flex-end;margin-top:12px;gap:8px;">
+        <button id="btnPostCancel" class="secondary">Cancel</button>
+        <button id="btnPostSave" class="save">Post</button>
       </div>
     </div>
   </div>
