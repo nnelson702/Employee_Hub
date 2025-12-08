@@ -100,3 +100,21 @@ button.small{padding:6px 8px}
   .dow-weight-input{width:100%;font-size:11px;}
   .dow-header{font-size:10px;}
 }
+
+/* ----- Home / Communications Hub ----- */
+.feed{display:flex;flex-direction:column;gap:12px;margin-top:12px;}
+.post-card{border:1px solid var(--border);background:#fff;border-radius:12px;padding:12px;box-shadow:0 1px 2px rgba(0,0,0,0.05);}
+.post-card.pinned{border-color:var(--ace-red);background:#fff5f6;}
+.post-card h4{margin:0 0 6px 0;font-size:16px;}
+.post-header{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+.post-footer{display:flex;gap:8px;margin-top:8px;}
+
+/* ----- P&L analysis grid ----- */
+.pl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:12px;}
+
+/* ----- Dept Walk Results grid ----- */
+.results-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:12px;}
+.gallery{display:flex;gap:8px;flex-wrap:wrap;}
+.thumbnail{width:80px;height:80px;border:1px solid var(--border);border-radius:8px;background:var(--bg);}
+.notes-list{list-style-type:none;padding:0;margin:0;}
+.notes-list li{margin-bottom:6px;}
