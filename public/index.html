@@ -83,6 +83,8 @@
             <div class="dow-actions">
               <button id="btn-apply-dow" class="secondary">Apply to daily goals</button>
               <button id="btn-reset-dow" class="secondary">Reset to equal &amp; apply</button>
+              <!-- Suggest dow weights from historical data (admin only) -->
+              <button id="btn-suggest-dow" class="secondary hidden">Suggest weights</button>
               <span id="dow-status" class="microstatus"></span>
             </div>
           </div>
@@ -171,9 +173,29 @@
               <tbody></tbody>
             </table>
           </div>
-          <!-- Monthly goals -->
+
+          <!-- Tab access management -->
           <div class="card">
-            <h3>Monthly Goals</h3>
+            <h3>Tab Access</h3>
+            <div class="row">
+              <label>User
+                <select id="ta-userSelect"></select>
+              </label>
+            </div>
+            <table id="tbl-tab-access" class="table">
+              <thead>
+                <tr>
+                  <th>Tab</th>
+                  <th>Has access?</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <!-- Sales goal insights and monthly goals -->
+          <div class="card">
+            <h3>Sales Goal Insights & Monthly Goals</h3>
             <div class="row">
               <label>Store
                 <select id="mg-storeSelect"></select>
