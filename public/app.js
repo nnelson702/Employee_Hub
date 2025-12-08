@@ -113,6 +113,8 @@ async function loadProfile() {
   $("#btn-apply-dow")?.classList.toggle("hidden", !isAdmin);
   $("#btn-reset-dow")?.classList.toggle("hidden", !isAdmin);
   $("#dow-status")?.classList.toggle("hidden", !isAdmin);
+  // show/hide DOW suggestion button for admin only
+  $("#btn-suggest-dow")?.classList.toggle("hidden", !isAdmin);
   await loadTabPermissions();
 }
 
@@ -592,6 +594,74 @@ async function resetDowToEqualAndApply() {
   await applyDowWeightsToMonth();
 }
 
+// ---- Suggest day-of-week weights based on historical sales ----
+/**
+ * Suggest DOW weights by analyzing historical sales for the same month in the prior year.
+ * For each day of the week, compute the average daily net sales during that month
+ * and derive a relative weight by comparing each DOW average to the overall average.
+ * The function returns an object mapping dow index (0=Sunday) to a weight (>=0).
+ * If no historical data exists, returns null.
+ */
+async function suggestDowWeights(storeId, yyyyMM) {
+  if (!storeId || !yyyyMM) return null;
+  const [yearStr, monthStr] = yyyyMM.split("-");
+  const prevYear = Number(yearStr) - 1;
+  if (prevYear < 2000) return null;
+  const start = `${prevYear}-${monthStr}-01`;
+  // compute days in previous year's month
+  const daysInPrev = new Date(prevYear, Number(monthStr), 0).getDate();
+  const end = `${prevYear}-${monthStr}-${String(daysInPrev).padStart(2, "0")}`;
+  const { data, error } = await supabase
+    .from("historical_sales")
+    .select("date, net_sales")
+    .eq("store_id", storeId)
+    .gte("date", start)
+    .lte("date", end);
+  if (error) {
+    console.warn("Error fetching historical sales for DOW suggestion", error);
+    return null;
+  }
+  if (!data || data.length === 0) {
+    return null;
+  }
+  // initialize sums and counts per DOW
+  const totals = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+  const counts = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+  data.forEach((row) => {
+    const dateStr = row.date;
+    const sale = Number(row.net_sales || 0);
+    const dow = new Date(`${dateStr}T00:00:00`).getDay();
+    totals[dow] += sale;
+    counts[dow]++;
+  });
+  // calculate average per dow and overall average
+  let sumAvgs = 0;
+  let dowCount = 0;
+  const avg = {};
+  for (let i = 0; i < 7; i++) {
+    if (counts[i] > 0) {
+      avg[i] = totals[i] / counts[i];
+      sumAvgs += avg[i];
+      dowCount++;
+    } else {
+      avg[i] = null;
+    }
+  }
+  if (dowCount === 0 || sumAvgs === 0) {
+    return null;
+  }
+  const overallAvg = sumAvgs / dowCount;
+  const weights = {};
+  for (let i = 0; i < 7; i++) {
+    if (avg[i] != null) {
+      weights[i] = avg[i] / overallAvg;
+    } else {
+      weights[i] = 1; // fallback to 1 if no data
+    }
+  }
+  return weights;
+}
+
 // ------ ADMIN ------
 async function bootAdmin() {
   // bind buttons only once to avoid duplicates
@@ -627,6 +697,14 @@ async function bootAdmin() {
     refreshAccessTable(),
     refreshTabAccessTable(),
   ]);
+
+  // automatically load monthly goals when store or month changes
+  $("#mg-storeSelect")?.addEventListener("change", () => {
+    loadGoals();
+  });
+  $("#mg-monthInput")?.addEventListener("change", () => {
+    loadGoals();
+  });
 }
 bootAdmin.bound = false;
 
@@ -1089,3 +1167,28 @@ initAuth();
 // wire DOW buttons
 $("#btn-apply-dow")?.addEventListener("click", applyDowWeightsToMonth);
 $("#btn-reset-dow")?.addEventListener("click", resetDowToEqualAndApply);
+
+// wire suggestion for DOW weights
+$("#btn-suggest-dow")?.addEventListener("click", async () => {
+  const storeId = $("#storeSelect")?.value;
+  const monthVal = $("#monthInput")?.value;
+  if (!storeId || !monthVal) {
+    $("#dow-status").textContent = "Select a store and month first.";
+    return;
+  }
+  $("#dow-status").textContent = "Calculating day-of-week weight suggestions…";
+  const weights = await suggestDowWeights(storeId, monthVal);
+  if (!weights) {
+    $("#dow-status").textContent = "No historical data available for weight suggestions.";
+    return;
+  }
+  // Apply weights to inputs
+  for (let i = 0; i < 7; i++) {
+    const inp = document.getElementById(`dow-weight-${i}`);
+    if (inp) {
+      inp.value = weights[i].toFixed(2);
+    }
+  }
+  $("#dow-status").textContent =
+    "Suggested weights loaded from historical data. Review and click Apply to daily goals.";
+});
