@@ -1,10 +1,13 @@
 // --- bootstrap Supabase ---
+
 const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.APP_CONFIG || {};
+
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- el helpers ---
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
 const fmtMoney = (n) =>
   n == null
     ? "—"
@@ -13,11 +16,13 @@ const fmtMoney = (n) =>
         currency: "USD",
         maximumFractionDigits: 2,
       });
+
 const fmtInt = (n) => (n == null ? "—" : Number(n).toLocaleString());
 const fmtPct = (p) => (p == null ? "—" : `${Number(p).toFixed(2)}%`);
 
 // tabs we may restrict per-user (Home & Sales are always allowed)
 const RESTRICTED_TABS = ["pl", "deptwalk", "deptwalk-results", "pop", "b2b", "eir"];
+
 let allowedTabs = new Set(["home", "sales"]);
 
 // --- state ---
@@ -101,11 +106,22 @@ async function loadProfile() {
     data || { id: session.user.id, email: session.user.email, is_admin: false };
   $("#nav-admin")?.classList.toggle("hidden", !profile.is_admin);
 
-  // admin-only tools on sales page
-  if (profile.is_admin) {
-    $("#dow-toolbar")?.classList.remove("hidden");
-    setupDowWeightsRow();
-  }
+  // Day-of-week toolbar: visible to all, editable only for admins
+  setupDowWeightsRow();
+
+  const isAdmin = !!profile.is_admin;
+  const dowToolbar = $("#dow-toolbar");
+  if (dowToolbar) dowToolbar.classList.remove("hidden");
+
+  // Inputs are read-only for non-admins
+  $$(".dow-weight-input").forEach((inp) => {
+    inp.disabled = !isAdmin;
+  });
+
+  // Apply / reset / status only for admins
+  $("#btn-apply-dow")?.classList.toggle("hidden", !isAdmin);
+  $("#btn-reset-dow")?.classList.toggle("hidden", !isAdmin);
+  $("#dow-status")?.classList.toggle("hidden", !isAdmin);
 
   await loadTabPermissions();
 }
@@ -371,9 +387,7 @@ function renderCalendar(rows, yyyyMM) {
       <div class="num">${String(day).padStart(2, "0")} <button class="details pill">Details</button></div>
       <div class="sales" style="font-size: clamp(18px, 2.2vw, 28px)">${salesDisplay}</div>
       <div class="row"><div class="bold">${txnDisplay}</div> <div class="muted">${atvDisplay}</div></div>
-      <div class="pct ${pctToGoal >= 100 ? "ok" : "bad"}">${
-      pctDisplay || "&nbsp;"
-    }</div>
+      <div class="pct ${pctToGoal >= 100 ? "ok" : "bad"}">${pctDisplay || "&nbsp;"}</div>
     `.replace(/\s+/g, " ");
 
     div.querySelector(".details")?.addEventListener("click", () =>
@@ -468,7 +482,15 @@ function getMonthMeta(yyyyMM) {
   return { daysInMonth, days };
 }
 
-const DOW_LABELS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+const DOW_LABELS = [
+  "SUNDAY",
+  "MONDAY",
+  "TUESDAY",
+  "WEDNESDAY",
+  "THURSDAY",
+  "FRIDAY",
+  "SATURDAY",
+];
 
 function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
   const { days } = getMonthMeta(yyyyMM);
@@ -605,7 +627,12 @@ async function applyDowWeightsToMonth() {
     dowWeights[i] = inp ? Number(inp.value || 1) || 1 : 1;
   }
 
-  const suggestions = computeSuggestions(month, monthlySales, monthlyTxn, dowWeights);
+  const suggestions = computeSuggestions(
+    month,
+    monthlySales,
+    monthlyTxn,
+    dowWeights
+  );
   const { days } = getMonthMeta(month);
 
   const payload = days.map((d) => {
