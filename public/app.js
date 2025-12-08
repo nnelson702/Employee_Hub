@@ -599,7 +599,7 @@ async function applyDowWeightsToMonth() {
     week_of_month: getWeekOfMonth(item.date),
     weekday_index: getWeekdayIndex(item.date),
   }));
-  const { error } = await supabase.from(\"forecast_daily\").upsert(payload, { onConflict: 'store_id,date' });
+  const { error } = await supabase.from("forecast_daily").upsert(payload, { onConflict: 'store_id,date' });
   if (error) {
     console.error("Error saving daily goals from DOW weights", error);
     $("#dow-status").textContent = `Error saving: ${error.message}`;
@@ -2653,6 +2653,3 @@ function endWalk(sessionId, aislesReviewed, emailCsv, comments) {
   throw err;
  }
 }
-
-
-
