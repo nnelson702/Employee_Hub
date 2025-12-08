@@ -1,13 +1,10 @@
 // --- bootstrap Supabase ---
-
 const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.APP_CONFIG || {};
-
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// --- el helpers ---
+// --- query helpers ---
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-
 const fmtMoney = (n) =>
   n == null
     ? "—"
@@ -16,13 +13,18 @@ const fmtMoney = (n) =>
         currency: "USD",
         maximumFractionDigits: 2,
       });
-
 const fmtInt = (n) => (n == null ? "—" : Number(n).toLocaleString());
 const fmtPct = (p) => (p == null ? "—" : `${Number(p).toFixed(2)}%`);
 
-// tabs we may restrict per-user (Home & Sales are always allowed)
-const RESTRICTED_TABS = ["pl", "deptwalk", "deptwalk-results", "pop", "b2b", "eir"];
-
+// Tabs that require permission (home and sales are always allowed)
+const RESTRICTED_TABS = [
+  "pl",
+  "deptwalk",
+  "deptwalk-results",
+  "pop",
+  "b2b",
+  "eir",
+];
 let allowedTabs = new Set(["home", "sales"]);
 
 // --- state ---
@@ -35,20 +37,16 @@ async function initAuth() {
   const { data } = await supabase.auth.getSession();
   session = data.session || null;
   bindAuthButtons();
-
   if (session) {
     $("#status").textContent = "Signed in.";
     $("#btn-signout")?.classList.remove("hidden");
     $("#whoami").textContent = session.user.email;
     $("#logged-out")?.classList.add("hidden");
     $("#topNav")?.classList.remove("hidden");
-
-    await loadProfile(); // loads profile + tab permissions
+    await loadProfile();
     setupNav();
-    routeTo("sales"); // default
+    routeTo("sales");
     await populateStoreDropdowns();
-
-    // load current month by default
     const now = new Date();
     const mval = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
       2,
@@ -56,7 +54,6 @@ async function initAuth() {
     )}`;
     const monthInput = $("#monthInput");
     if (monthInput) monthInput.value = mval;
-
     const storeSelect = $("#storeSelect");
     if (storeSelect && monthInput && storeSelect.value) {
       currentStoreId = storeSelect.value;
@@ -105,40 +102,30 @@ async function loadProfile() {
   profile =
     data || { id: session.user.id, email: session.user.email, is_admin: false };
   $("#nav-admin")?.classList.toggle("hidden", !profile.is_admin);
-
-  // Day-of-week toolbar: visible to all, editable only for admins
+  // DOW toolbar: visible to all; editable only for admins
   setupDowWeightsRow();
-
   const isAdmin = !!profile.is_admin;
   const dowToolbar = $("#dow-toolbar");
   if (dowToolbar) dowToolbar.classList.remove("hidden");
-
-  // Inputs are read-only for non-admins
   $$(".dow-weight-input").forEach((inp) => {
     inp.disabled = !isAdmin;
   });
-
-  // Apply / reset / status only for admins
   $("#btn-apply-dow")?.classList.toggle("hidden", !isAdmin);
   $("#btn-reset-dow")?.classList.toggle("hidden", !isAdmin);
   $("#dow-status")?.classList.toggle("hidden", !isAdmin);
-
   await loadTabPermissions();
 }
 
 // ----- tab permissions -----
 async function loadTabPermissions() {
   allowedTabs = new Set(["home", "sales"]);
-
   if (!profile) return;
-
   if (profile.is_admin) {
     RESTRICTED_TABS.forEach((t) => allowedTabs.add(t));
     allowedTabs.add("admin");
     applyTabVisibility();
     return;
   }
-
   const { data, error } = await supabase
     .from("tab_access")
     .select("tab_key")
@@ -146,18 +133,15 @@ async function loadTabPermissions() {
   if (!error && data) {
     data.forEach((row) => allowedTabs.add(row.tab_key));
   }
-
   applyTabVisibility();
 }
 
 function applyTabVisibility() {
   const navButtons = $$("#topNav button");
   if (!navButtons.length) return;
-
   navButtons.forEach((btn) => {
     const route = btn.getAttribute("data-route");
     if (!route) return;
-
     if (route === "home" || route === "sales") {
       btn.classList.remove("hidden");
       return;
@@ -187,12 +171,10 @@ function routeTo(route) {
       route = "sales";
     }
   }
-
   $$("#topNav button").forEach((b) =>
     b.classList.toggle("active", b.getAttribute("data-route") === route)
   );
   $$(".page").forEach((p) => p.classList.add("hidden"));
-
   switch (route) {
     case "home":
       $("#page-home")?.classList.remove("hidden");
@@ -235,7 +217,6 @@ $("#btn-load")?.addEventListener("click", async () => {
   const month = $("#monthInput")?.value;
   currentStoreId = storeId;
   if (!storeId || !month) return;
-
   $("#status").textContent = "Month loaded.";
   await loadMonth(storeId, month);
 });
@@ -251,15 +232,16 @@ $("#storeSelect")?.addEventListener("change", handleStoreOrMonthChange);
 $("#monthInput")?.addEventListener("change", handleStoreOrMonthChange);
 
 async function populateStoreDropdowns() {
+  // Attempt to load user-specific stores via view; fallback to all stores
   const { data, error } = await supabase
     .from("v_user_stores")
     .select("store_id, store_name")
     .order("store_id");
+  let stores = data;
   if (error && error.code !== "PGRST116") {
     $("#status").textContent = error.message;
     return;
   }
-  let stores = data;
   if (!stores) {
     const { data: d2, error: e2 } = await supabase
       .from("stores")
@@ -283,18 +265,15 @@ async function populateStoreDropdowns() {
       el.appendChild(opt);
     }
   });
-
   await refreshUsersForSelect();
 }
 
 // ---------- loadMonth ----------
 async function loadMonth(storeId, yyyyMM) {
   if (!storeId || !yyyyMM) return;
-
   try {
     await callBuildForecast(storeId, yyyyMM);
   } catch {}
-
   const [yearStr, monthStr] = yyyyMM.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr);
@@ -302,13 +281,11 @@ async function loadMonth(storeId, yyyyMM) {
     $("#status").textContent = "Invalid month.";
     return;
   }
-
   const firstDay = `${yearStr}-${monthStr}-01`;
   const nextMonth = month === 12 ? 1 : month + 1;
   const nextYear = month === 12 ? year + 1 : year;
   const nextMonthStr = String(nextMonth).padStart(2, "0");
   const firstDayOfNextMonth = `${nextYear}-${nextMonthStr}-01`;
-
   const { data, error } = await supabase
     .from("forecast_daily")
     .select("*")
@@ -316,12 +293,10 @@ async function loadMonth(storeId, yyyyMM) {
     .gte("date", firstDay)
     .lt("date", firstDayOfNextMonth)
     .order("date");
-
   if (error) {
     $("#status").textContent = error.message;
     return;
   }
-
   const rows = data || [];
   renderCalendar(rows, yyyyMM);
   renderSummary(storeId, yyyyMM, rows);
@@ -348,13 +323,11 @@ function renderCalendar(rows, yyyyMM) {
     monthStart.getMonth() + 1,
     0
   ).getDate();
-
   for (let i = 0; i < firstDow; i++) {
     const d = document.createElement("div");
     d.className = "day";
     cal.appendChild(d);
   }
-
   const today = new Date();
   const todayKey = today.toISOString().slice(0, 10);
   for (let day = 1; day <= daysInMonth; day++) {
@@ -362,10 +335,8 @@ function renderCalendar(rows, yyyyMM) {
     const row = rows.find((r) => r.date === date) || {};
     const div = document.createElement("div");
     div.className = "day";
-
     const isPast = new Date(date) < new Date(todayKey);
     div.classList.add(isPast ? "past" : "future");
-
     const goalSales = Number(row.sales_goal || 0);
     const actSales = Number(row.sales_actual || 0);
     const goalTxn = Number(row.txn_goal || 0);
@@ -373,23 +344,19 @@ function renderCalendar(rows, yyyyMM) {
     const goalAtv = Number(row.atv_goal || 0);
     const actAtv = Number(row.atv_actual || 0);
     const pctToGoal = goalSales > 0 ? (actSales / goalSales) * 100 : 0;
-
     if (isPast && goalSales > 0) {
       div.classList.add(pctToGoal >= 100 ? "goal-hit" : "goal-miss");
     }
-
     const salesDisplay = isPast ? fmtMoney(actSales) : fmtMoney(goalSales);
     const txnDisplay = isPast ? fmtInt(actTxn) : fmtInt(goalTxn);
     const atvDisplay = isPast ? fmtMoney(actAtv) : fmtMoney(goalAtv);
     const pctDisplay = isPast ? `${pctToGoal.toFixed(2)}%` : "";
-
     div.innerHTML = `
       <div class="num">${String(day).padStart(2, "0")} <button class="details pill">Details</button></div>
       <div class="sales" style="font-size: clamp(18px, 2.2vw, 28px)">${salesDisplay}</div>
       <div class="row"><div class="bold">${txnDisplay}</div> <div class="muted">${atvDisplay}</div></div>
       <div class="pct ${pctToGoal >= 100 ? "ok" : "bad"}">${pctDisplay || "&nbsp;"}</div>
     `.replace(/\s+/g, " ");
-
     div.querySelector(".details")?.addEventListener("click", () =>
       openDayModal(date, row)
     );
@@ -399,19 +366,16 @@ function renderCalendar(rows, yyyyMM) {
 
 // ---- modal basics ----
 let modalDate = null;
-
 function openDayModal(date, row) {
   modalDate = date;
   $("#modalTitle").textContent = `${date} — Day details`;
   buildKpiCards(row);
   $("#dayModal")?.classList.remove("hidden");
 }
-
 $("#btnCloseModal")?.addEventListener("click", () => {
   $("#dayModal")?.classList.add("hidden");
   modalDate = null;
 });
-
 $("#btnSaveModal")?.addEventListener("click", async () => {
   const payload = collectModalValues();
   const { error } = await supabase.from("actual_daily").upsert(payload);
@@ -425,7 +389,6 @@ $("#btnSaveModal")?.addEventListener("click", async () => {
     await loadMonth(currentStoreId, month);
   }
 });
-
 $("#btn-clear-all")?.addEventListener("click", async () => {
   if (!modalDate) return;
   const { error } = await supabase
@@ -446,6 +409,7 @@ $("#btn-clear-all")?.addEventListener("click", async () => {
 
 // ---- Edge function call (best-effort) ----
 async function callBuildForecast(storeId, yyyyMM) {
+  // optional: call serverless function to build forecast
   const { error } = await fetch(`${SUPABASE_URL}/functions/v1/build-forecast`, {
     method: "POST",
     headers: {
@@ -462,26 +426,19 @@ async function callBuildForecast(storeId, yyyyMM) {
 // --------------------------------------------------------
 // DAY-OF-WEEK WEIGHTS
 // --------------------------------------------------------
-
 function getMonthMeta(yyyyMM) {
   const [yearStr, monthStr] = yyyyMM.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr);
   const daysInMonth = new Date(year, month, 0).getDate();
-
   const days = [];
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${yyyyMM}-${String(d).padStart(2, "0")}`;
     const dt = new Date(`${dateStr}T00:00:00`);
-    days.push({
-      date: dateStr,
-      dayNum: d,
-      dow: dt.getDay(),
-    });
+    days.push({ date: dateStr, dayNum: d, dow: dt.getDay() });
   }
   return { daysInMonth, days };
 }
-
 const DOW_LABELS = [
   "SUNDAY",
   "MONDAY",
@@ -491,7 +448,6 @@ const DOW_LABELS = [
   "FRIDAY",
   "SATURDAY",
 ];
-
 function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
   const { days } = getMonthMeta(yyyyMM);
   if (!monthlySales && !monthlyTxn) {
@@ -500,7 +456,6 @@ function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
       return acc;
     }, {});
   }
-
   let totalWeight = 0;
   const perDayWeight = {};
   days.forEach((d) => {
@@ -509,7 +464,6 @@ function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
     totalWeight += w;
   });
   if (totalWeight <= 0) totalWeight = days.length;
-
   const result = {};
   days.forEach((d) => {
     const w = perDayWeight[d.date];
@@ -523,12 +477,10 @@ function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
   });
   return result;
 }
-
 function setupDowWeightsRow() {
   const rowEl = $("#dow-weights-row");
   if (!rowEl) return;
   if (rowEl.childElementCount > 0) return;
-
   const cells = DOW_LABELS.map((label, idx) => {
     return `
       <div class="dow-cell">
@@ -537,26 +489,17 @@ function setupDowWeightsRow() {
           <span class="dow-current" id="dow-pct-${idx}">—</span>
         </div>
         <div class="dow-input-row">
-          <input
-            type="number"
-            step="0.1"
-            id="dow-weight-${idx}"
-            class="dow-weight-input"
-            value="1"
-          />
+          <input type="number" step="0.1" id="dow-weight-${idx}" class="dow-weight-input" value="1" />
           <span class="dow-unit">weight</span>
         </div>
       </div>
     `;
   }).join("");
-
   rowEl.innerHTML = cells;
 }
-
 function updateDowHeaderFromRows(yyyyMM, rows) {
   const totalsByDow = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
   let totalSales = 0;
-
   rows.forEach((r) => {
     const dateStr = r.date;
     if (!dateStr) return;
@@ -566,7 +509,6 @@ function updateDowHeaderFromRows(yyyyMM, rows) {
     totalsByDow[dow] += s;
     totalSales += s;
   });
-
   for (let i = 0; i < 7; i++) {
     const span = document.getElementById(`dow-pct-${i}`);
     if (!span) continue;
@@ -578,63 +520,45 @@ function updateDowHeaderFromRows(yyyyMM, rows) {
     }
   }
 }
-
 async function applyDowWeightsToMonth() {
   if (!profile?.is_admin) {
     $("#dow-status").textContent = "Day-of-week weights are admin-only.";
     return;
   }
-
   const storeId = $("#storeSelect")?.value;
   const month = $("#monthInput")?.value;
-
   if (!storeId || !month) {
     $("#dow-status").textContent = "Select a store and month first.";
     return;
   }
-
   $("#dow-status").textContent = "Loading monthly goals…";
-
   const { data: mg, error: mgErr } = await supabase
     .from("monthly_goals")
     .select("store_id,month,sales_goal,txn_goal")
     .eq("store_id", storeId)
     .eq("month", month)
     .maybeSingle();
-
   if (mgErr) {
     $("#dow-status").textContent = `Error loading monthly goals: ${mgErr.message}`;
     return;
   }
   if (!mg) {
-    $("#dow-status").textContent =
-      "No monthly goals saved yet (Admin > Monthly Goals).";
+    $("#dow-status").textContent = "No monthly goals saved yet (Admin > Monthly Goals).";
     return;
   }
-
   const monthlySales = Number(mg.sales_goal || 0);
   const monthlyTxn = Number(mg.txn_goal || 0);
-
   if (!monthlySales && !monthlyTxn) {
-    $("#dow-status").textContent =
-      "Monthly goals are zero or empty. Set goals in Admin first.";
+    $("#dow-status").textContent = "Monthly goals are zero or empty. Set goals in Admin first.";
     return;
   }
-
   const dowWeights = {};
   for (let i = 0; i < 7; i++) {
     const inp = document.getElementById(`dow-weight-${i}`);
     dowWeights[i] = inp ? Number(inp.value || 1) || 1 : 1;
   }
-
-  const suggestions = computeSuggestions(
-    month,
-    monthlySales,
-    monthlyTxn,
-    dowWeights
-  );
+  const suggestions = computeSuggestions(month, monthlySales, monthlyTxn, dowWeights);
   const { days } = getMonthMeta(month);
-
   const payload = days.map((d) => {
     const sugg = suggestions[d.date] || { sales: 0, txn: 0 };
     return {
@@ -645,50 +569,58 @@ async function applyDowWeightsToMonth() {
       txn_goal: sugg.txn,
     };
   });
-
   $("#dow-status").textContent = "Saving daily goals…";
-
   const { error } = await supabase.from("forecast_daily").upsert(payload);
-
   if (error) {
     console.error("Error saving daily goals from DOW weights", error);
     $("#dow-status").textContent = `Error saving: ${error.message}`;
     return;
   }
-
-  $("#dow-status").textContent =
-    "Daily goals updated from day-of-week weights.";
-
+  $("#dow-status").textContent = "Daily goals updated from day-of-week weights.";
   const uiMonth = $("#monthInput")?.value;
   const uiStore = $("#storeSelect")?.value;
   if (uiMonth === month && uiStore === String(storeId)) {
     await loadMonth(storeId, month);
   }
 }
-
 async function resetDowToEqualAndApply() {
   for (let i = 0; i < 7; i++) {
     const inp = document.getElementById(`dow-weight-${i}`);
     if (inp) inp.value = "1";
   }
-  $("#dow-status").textContent =
-    "Weights reset to equal. Applying to daily goals…";
+  $("#dow-status").textContent = "Weights reset to equal. Applying to daily goals…";
   await applyDowWeightsToMonth();
 }
 
 // ------ ADMIN ------
 async function bootAdmin() {
-  $("#btn-refresh-users")?.addEventListener("click", refreshUsersTable);
-  $("#admin-user-search")?.addEventListener("input", refreshUsersTable);
-
-  $("#sa-userSelect")?.addEventListener("change", refreshAccessTable);
-  $("#btn-add-access")?.addEventListener("click", grantAccess);
-
-  $("#ta-userSelect")?.addEventListener("change", refreshTabAccessTable);
-
-  $("#btn-load-goals")?.addEventListener("click", loadGoals);
-  $("#btn-save-goals")?.addEventListener("click", saveGoals);
-
+  // bind buttons only once to avoid duplicates
+  if (!bootAdmin.bound) {
+    $("#btn-refresh-users")?.addEventListener("click", refreshUsersTable);
+    $("#admin-user-search")?.addEventListener("input", refreshUsersTable);
+    $("#sa-userSelect")?.addEventListener("change", refreshAccessTable);
+    $("#btn-add-access")?.addEventListener("click", grantAccess);
+    $("#ta-userSelect")?.addEventListener("change", refreshTabAccessTable);
+    $("#btn-load-goals")?.addEventListener("click", loadGoals);
+    $("#btn-save-goals")?.addEventListener("click", saveGoals);
+    $("#btn-suggest-goals")?.addEventListener("click", async () => {
+      const storeId = $("#mg-storeSelect")?.value;
+      const month = $("#mg-monthInput")?.value;
+      if (!storeId || !month) {
+        $("#mg-status").textContent = "Select a store and month first.";
+        return;
+      }
+      $("#mg-status").textContent = "Calculating goal suggestions…";
+      const suggestions = await calculateGoalSuggestions(storeId, month);
+      if (!suggestions) {
+        $("#mg-status").textContent = "No historical data available for suggestions.";
+        return;
+      }
+      renderGoalSuggestions(suggestions);
+      $("#mg-status").textContent = "Suggestions loaded. Click a card to apply.";
+    });
+    bootAdmin.bound = true;
+  }
   await Promise.all([
     refreshUsersTable(),
     refreshUsersForSelect(),
@@ -696,6 +628,7 @@ async function bootAdmin() {
     refreshTabAccessTable(),
   ]);
 }
+bootAdmin.bound = false;
 
 async function refreshUsersForSelect() {
   if (!profile?.is_admin) return;
@@ -707,12 +640,10 @@ async function refreshUsersForSelect() {
     $("#status").textContent = error.message;
     return;
   }
-
   const saSel = $("#sa-userSelect");
   const taSel = $("#ta-userSelect");
   if (saSel) saSel.innerHTML = "";
   if (taSel) taSel.innerHTML = "";
-
   for (const u of data) {
     const label = u.email + (u.is_admin ? " (admin)" : "");
     if (saSel) {
@@ -728,7 +659,6 @@ async function refreshUsersForSelect() {
       taSel.appendChild(opt2);
     }
   }
-
   await refreshAccessTable();
   await refreshTabAccessTable();
 }
@@ -816,24 +746,19 @@ async function refreshAccessTable() {
     tb.appendChild(tr);
   }
 }
-
 async function grantAccess() {
   const userId = $("#sa-userSelect")?.value;
   const storeId = $("#sa-storeSelect")?.value;
   if (!userId || !storeId) return;
   const { error } = await supabase
     .from("store_access")
-    .upsert(
-      { user_id: userId, store_id: storeId },
-      { onConflict: "user_id,store_id" }
-    );
+    .upsert({ user_id: userId, store_id: storeId }, { onConflict: "user_id,store_id" });
   if (error) {
     $("#status").textContent = error.message;
     return;
   }
   await refreshAccessTable();
 }
-
 async function removeAccess(userId, storeId) {
   const { error } = await supabase
     .from("store_access")
@@ -852,7 +777,6 @@ async function refreshTabAccessTable() {
   if (!profile?.is_admin) return;
   const userId = $("#ta-userSelect")?.value;
   if (!userId) return;
-
   const { data, error } = await supabase
     .from("tab_access")
     .select("tab_key")
@@ -861,11 +785,9 @@ async function refreshTabAccessTable() {
     $("#status").textContent = error.message;
     return;
   }
-
   const current = new Set((data || []).map((r) => r.tab_key));
   const tb = $("#tbl-tab-access tbody");
   tb.innerHTML = "";
-
   for (const key of RESTRICTED_TABS) {
     const hasAccess = current.has(key);
     const labelMap = {
@@ -877,44 +799,32 @@ async function refreshTabAccessTable() {
       eir: "Employee Incident Reports",
     };
     const label = labelMap[key] || key;
-
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${label}</td>
       <td>${hasAccess ? "Yes" : "No"}</td>
-      <td>
-        <button class="secondary" data-tab="${key}" data-has="${
+      <td><button class="secondary" data-tab="${key}" data-has="${
       hasAccess ? "1" : "0"
-    }">
-          ${hasAccess ? "Revoke" : "Grant"}
-        </button>
-      </td>
+    }">${hasAccess ? "Revoke" : "Grant"}</button></td>
     `;
     tr
       .querySelector("button[data-tab]")
-      ?.addEventListener("click", () =>
-        setTabAccess(userId, key, !hasAccess)
-      );
+      ?.addEventListener("click", () => setTabAccess(userId, key, !hasAccess));
     tb.appendChild(tr);
   }
-
   const salesRow = document.createElement("tr");
   salesRow.innerHTML = `
-    <td>Sales Goals & Current Results</td>
+    <td>Sales Goals &amp; Current Results</td>
     <td>Always</td>
     <td><span class="muted">Always enabled for all users</span></td>
   `;
   tb.appendChild(salesRow);
 }
-
 async function setTabAccess(userId, tabKey, shouldHave) {
   if (shouldHave) {
     const { error } = await supabase
       .from("tab_access")
-      .upsert(
-        { user_id: userId, tab_key: tabKey },
-        { onConflict: "user_id,tab_key" }
-      );
+      .upsert({ user_id: userId, tab_key: tabKey }, { onConflict: "user_id,tab_key" });
     if (error) {
       $("#status").textContent = error.message;
       return;
@@ -931,7 +841,6 @@ async function setTabAccess(userId, tabKey, shouldHave) {
     }
   }
   await refreshTabAccessTable();
-
   if (userId === profile.id) {
     await loadTabPermissions();
   }
@@ -955,39 +864,122 @@ async function loadGoals() {
   $("#mg-sales").value = data?.sales_goal ?? "";
   $("#mg-txn").value = data?.txn_goal ?? "";
   $("#mg-atv").value = data?.atv_goal ?? "";
-  $("#mg-status").textContent = data
-    ? `Goals loaded for store ${storeId}.`
-    : "No goals saved yet.";
+  $("#mg-status").textContent = data ? `Goals loaded for store ${storeId}.` : "No goals saved yet.";
 }
-
 async function saveGoals() {
   const storeId = $("#mg-storeSelect")?.value;
   const month = $("#mg-monthInput")?.value;
   const sales = $("#mg-sales")?.value ? Number($("#mg-sales").value) : null;
   const txn = $("#mg-txn")?.value ? Number($("#mg-txn").value) : null;
   const atv = $("#mg-atv")?.value ? Number($("#mg-atv").value) : null;
-
   if (!storeId || !month) {
     $("#mg-status").textContent = "Select a store and month first.";
     return;
   }
-
   $("#mg-status").textContent = "Saving monthly goals…";
-
   const { error } = await supabase
     .from("monthly_goals")
     .upsert(
       { store_id: storeId, month, sales_goal: sales, txn_goal: txn, atv_goal: atv },
       { onConflict: "store_id,month" }
     );
-
   if (error) {
     console.error("Error saving monthly goals", error);
     $("#mg-status").textContent = `Error: ${error.message}`;
     return;
   }
-
   $("#mg-status").textContent = `Goals saved for store ${storeId} successfully.`;
+}
+
+// ---- Goal Suggestions ----
+async function fetchHistoricalMonth(storeId, yyyyMM) {
+  // Fetch total net sales, transaction count and atv for the same month last year.
+  const [yearStr, monthStr] = yyyyMM.split("-");
+  const prevYear = Number(yearStr) - 1;
+  if (prevYear < 2000) return null;
+  const start = `${prevYear}-${monthStr}-01`;
+  const daysInMonth = new Date(prevYear, Number(monthStr), 0).getDate();
+  const end = `${prevYear}-${monthStr}-${String(daysInMonth).padStart(2, "0")}`;
+  const { data, error } = await supabase
+    .from("historical_sales")
+    .select("net_sales, txn_count, atv")
+    .eq("store_id", storeId)
+    .gte("date", start)
+    .lte("date", end);
+  if (error) {
+    console.warn("Error fetching historical sales", error);
+    return null;
+  }
+  if (!data || data.length === 0) {
+    return null;
+  }
+  let totalSales = 0;
+  let totalTxn = 0;
+  data.forEach((row) => {
+    totalSales += Number(row.net_sales || 0);
+    totalTxn += Number(row.txn_count || 0);
+  });
+  const avgAtv = totalTxn > 0 ? totalSales / totalTxn : null;
+  return { totalSales, totalTxn, avgAtv };
+}
+
+async function calculateGoalSuggestions(storeId, yyyyMM) {
+  const hist = await fetchHistoricalMonth(storeId, yyyyMM);
+  if (!hist) {
+    return null;
+  }
+  const baseSales = hist.totalSales;
+  const baseTxn = hist.totalTxn;
+  const baseAtv = hist.avgAtv || 0;
+  // Apply multipliers for conservative, standard, aggressive scenarios
+  const multipliers = {
+    conservative: 0.95,
+    standard: 1.0,
+    aggressive: 1.05,
+  };
+  const suggestions = {};
+  Object.entries(multipliers).forEach(([key, mult]) => {
+    suggestions[key] = {
+      sales: Math.round(baseSales * mult * 100) / 100,
+      txn: Math.round(baseTxn * mult),
+      atv: baseTxn > 0 ? Math.round((baseSales * mult) / (baseTxn * mult) * 100) / 100 : baseAtv,
+    };
+  });
+  return suggestions;
+}
+
+function renderGoalSuggestions(suggestions) {
+  const container = $("#goal-suggestions");
+  if (!container) return;
+  container.innerHTML = "";
+  container.classList.remove("hidden");
+  const labels = {
+    conservative: "Conservative",
+    standard: "Standard",
+    aggressive: "Aggressive",
+  };
+  Object.entries(suggestions).forEach(([key, values]) => {
+    const card = document.createElement("div");
+    card.className = "suggestion-card";
+    card.setAttribute("data-type", key);
+    card.innerHTML = `
+      <h4>${labels[key]}</h4>
+      <div>Sales: <span class="value">${fmtMoney(values.sales)}</span></div>
+      <div>Txn: <span class="value">${fmtInt(values.txn)}</span></div>
+      <div>ATV: <span class="value">${fmtMoney(values.atv)}</span></div>
+    `;
+    card.addEventListener("click", () => {
+      // highlight selected
+      $$(".suggestion-card").forEach((c) => c.classList.remove("selected"));
+      card.classList.add("selected");
+      // update input fields
+      $("#mg-sales").value = values.sales.toFixed(2);
+      $("#mg-txn").value = values.txn;
+      $("#mg-atv").value = values.atv.toFixed(2);
+      $("#mg-status").textContent = `${labels[key]} goal applied. Click Save Goals to persist.`;
+    });
+    container.appendChild(card);
+  });
 }
 
 // ---- modal KPI placeholders ----
@@ -1007,21 +999,17 @@ function collectModalValues() {
   const emailInput = $("#email");
   const btnForgot = $("#btn-forgot");
   const authMessageEl = $("#auth-message");
-
   const passwordResetSection = $("#password-reset");
   const newPasswordInput = $("#newPassword");
   const confirmPasswordInput = $("#confirmPassword");
   const btnSetPassword = $("#btn-set-password");
   const resetMessageEl = $("#reset-message");
-
   const loggedOutSection = $("#logged-out");
   const topNav = $("#topNav");
   const pages = $$(".page");
-
   if (!emailInput || !btnForgot) {
     return;
   }
-
   function showStatusMessage(el, message, type = "info") {
     if (!el) return;
     el.textContent = message || "";
@@ -1033,106 +1021,62 @@ function collectModalValues() {
       el.style.color = "#555";
     }
   }
-
   function showLoginView() {
     if (loggedOutSection) loggedOutSection.classList.remove("hidden");
     if (topNav) topNav.classList.add("hidden");
     pages.forEach((p) => p.classList.add("hidden"));
     if (passwordResetSection) passwordResetSection.classList.add("hidden");
   }
-
   function showResetView() {
     if (loggedOutSection) loggedOutSection.classList.add("hidden");
     if (topNav) topNav.classList.add("hidden");
     pages.forEach((p) => p.classList.add("hidden"));
     if (passwordResetSection) passwordResetSection.classList.remove("hidden");
   }
-
   btnForgot.addEventListener("click", async () => {
     const email = emailInput.value.trim();
-
     if (!email) {
-      showStatusMessage(
-        authMessageEl,
-        "Please enter your email address first.",
-        "error"
-      );
+      showStatusMessage(authMessageEl, "Please enter your email address first.", "error");
       return;
     }
-
     showStatusMessage(authMessageEl, "Sending password reset email…");
-
     const redirectTo = `${window.location.origin}/#/reset-password`;
-
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo,
-    });
-
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
     if (error) {
       showStatusMessage(authMessageEl, `Error: ${error.message}`, "error");
     } else {
-      showStatusMessage(
-        authMessageEl,
-        "Password reset email sent. Please check your inbox.",
-        "success"
-      );
+      showStatusMessage(authMessageEl, "Password reset email sent. Please check your inbox.", "success");
     }
   });
-
   if (window.location.hash && window.location.hash.includes("type=recovery")) {
     showResetView();
-    showStatusMessage(
-      resetMessageEl,
-      "Please enter a new password for your account."
-    );
+    showStatusMessage(resetMessageEl, "Please enter a new password for your account.");
   }
-
   supabase.auth.onAuthStateChange((event) => {
     if (event === "PASSWORD_RECOVERY") {
       showResetView();
-      showStatusMessage(
-        resetMessageEl,
-        "Token verified. Please enter a new password for your account."
-      );
+      showStatusMessage(resetMessageEl, "Token verified. Please enter a new password for your account.");
     }
   });
-
   if (btnSetPassword) {
     btnSetPassword.addEventListener("click", async () => {
       const newPassword = newPasswordInput.value;
       const confirmPassword = confirmPasswordInput.value;
-
       if (!newPassword || !confirmPassword) {
-        showStatusMessage(
-          resetMessageEl,
-          "Please enter and confirm your new password.",
-          "error"
-        );
+        showStatusMessage(resetMessageEl, "Please enter and confirm your new password.", "error");
         return;
       }
-
       if (newPassword !== confirmPassword) {
         showStatusMessage(resetMessageEl, "Passwords do not match.", "error");
         return;
       }
-
       showStatusMessage(resetMessageEl, "Updating password…");
-
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) {
         showStatusMessage(resetMessageEl, `Error: ${error.message}`, "error");
         return;
       }
-
-      showStatusMessage(
-        resetMessageEl,
-        "Password updated. You can now sign in with your new password.",
-        "success"
-      );
-
+      showStatusMessage(resetMessageEl, "Password updated. You can now sign in with your new password.", "success");
       setTimeout(() => {
         showLoginView();
       }, 2000);
@@ -1140,9 +1084,8 @@ function collectModalValues() {
   }
 })();
 
-// ---- start ----
+// ---- start the app ----
 initAuth();
-
 // wire DOW buttons
 $("#btn-apply-dow")?.addEventListener("click", applyDowWeightsToMonth);
 $("#btn-reset-dow")?.addEventListener("click", resetDowToEqualAndApply);
