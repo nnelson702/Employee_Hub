@@ -102,3 +102,121 @@ button.small{padding:6px 8px}
   font-size:13px;
   color:#555;
 }
+
+/* ---------- Month layout + DOW weights ---------- */
+
+.month-layout{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+/* Toolbar wrapper */
+.dow-toolbar{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+
+/* 7-column DOW grid aligned with calendar */
+.dow-weights{
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  gap:14px;
+}
+
+/* One cell per day-of-week */
+.dow-cell{
+  border-radius:14px;
+  padding:6px 8px;
+  background:var(--bg);
+  border:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+/* Header: label + current % mix */
+.dow-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  font-size:11px;
+  font-weight:600;
+}
+
+.dow-name{
+  letter-spacing:0.03em;
+}
+
+.dow-current{
+  font-size:11px;
+  color:var(--muted);
+}
+
+/* Input row (admin-only editable) */
+.dow-input-row{
+  display:flex;
+  align-items:center;
+  gap:4px;
+}
+
+/* Option 1: subtle input styling */
+.dow-weight-input{
+  width:70px;
+  padding:4px 6px;
+  border-radius:6px;
+  border:1px solid #ddd;
+  background:#fafafa;
+  font-size:12px;
+}
+
+/* Read-only look for non-admins */
+.dow-weight-input:disabled{
+  background:transparent;
+  border-color:transparent;
+  cursor:default;
+}
+
+.dow-unit{
+  font-size:11px;
+  color:var(--muted);
+}
+
+/* Actions row under DOW grid */
+.dow-actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+}
+
+/* ---------- Mobile / touch-friendly tweaks ---------- */
+
+@media (max-width:768px){
+  .calendar{
+    gap:8px;
+  }
+
+  .calendar .day{
+    min-height:120px;
+    padding:8px;
+  }
+
+  .dow-weights{
+    gap:8px;
+  }
+
+  .dow-cell{
+    padding:4px 6px;
+  }
+
+  .dow-weight-input{
+    width:100%;
+    font-size:11px;
+  }
+
+  .dow-header{
+    font-size:10px;
+  }
+}
