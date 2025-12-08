@@ -564,9 +564,8 @@ async function applyDowWeightsToMonth() {
   const payload = days.map((d) => {
     const sugg = suggestions[d.date] || { sales: 0, txn: 0 };
     return {
-      store_id: Number(storeId),
+      store_id: storeId, // use raw storeId value; leave type as string for uuid-compatible
       date: d.date,
-      version_id: 1,
       sales_goal: sugg.sales,
       txn_goal: sugg.txn,
     };
