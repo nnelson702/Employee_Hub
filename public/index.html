@@ -4,21 +4,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Sales Forecasting</title>
-
+  <title>Skye Bridge Sales Forecasting</title>
   <!-- Supabase (UMD) -->
   <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-
-  <!-- Inline config -->
+  <!-- Inline config for Supabase credentials -->
   <script>
     window.APP_CONFIG = {
       SUPABASE_URL: "https://bvyrxqfffaxthrjfxjue.supabase.co",
       SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM"
     };
   </script>
-
-  <link rel="stylesheet" href="./styles.css?v=2025-12-02-02" />
-  <script defer src="./app.js?v=2025-12-06-03"></script>
+  <link rel="stylesheet" href="./styles.css?v=2025-12-08-01" />
+  <script defer src="./app.js?v=2025-12-08-01"></script>
 </head>
 
 <body>
@@ -29,42 +26,35 @@
       <button id="btn-signout" class="secondary hidden">Sign out</button>
     </div>
   </header>
-
   <!-- Nav -->
   <nav id="topNav" class="nav hidden">
     <button data-route="home">Home</button>
-    <button data-route="sales">Sales Goals & Current Results</button>
-    <button data-route="pl">P&L</button>
+    <button data-route="sales">Sales Goals &amp; Current Results</button>
+    <button data-route="pl">P&amp;L</button>
     <button data-route="deptwalk">Dept Walk</button>
-    <button data-route="deptwalk-results">Dept Walk Results & Details</button>
+    <button data-route="deptwalk-results">Dept Walk Results &amp; Details</button>
     <button data-route="b2b">B2B</button>
     <button data-route="eir">EIR – Incident Reports</button>
     <button id="nav-admin" data-route="admin" class="admin-only hidden">Admin</button>
   </nav>
-
   <!-- Status bar -->
   <div id="status" class="status">Loading…</div>
-
-  <!-- Logged-out simple auth -->
+  <!-- Logged-out view -->
   <section id="logged-out" class="container">
     <div id="auth-area">
       <input id="email" type="email" placeholder="Email" />
       <input id="password" type="password" placeholder="Password" />
-
       <div class="auth-actions">
         <button id="btn-signin">Sign in</button>
         <button id="btn-forgot" type="button" class="link-button">
           Forgot password?
         </button>
       </div>
-
       <div id="auth-message" class="auth-message"></div>
     </div>
   </section>
-
   <!-- Pages -->
   <main>
-
     <!-- Home -->
     <section id="page-home" class="page hidden">
       <div class="container">
@@ -72,8 +62,7 @@
         <p>This will become a simple landing page with links, tips, and quick KPIs.</p>
       </div>
     </section>
-
-    <!-- Sales (calendar app) -->
+    <!-- Sales page -->
     <section id="page-sales" class="page hidden">
       <div id="app" class="container">
         <div class="controls">
@@ -87,76 +76,61 @@
             <button id="btn-load">Load</button>
           </div>
         </div>
-
         <div class="month-layout">
           <!-- Day-of-week weights aligned over calendar -->
           <div id="dow-toolbar" class="dow-toolbar hidden">
-            <div class="dow-weights" id="dow-weights-row">
-              <!-- JS injects SUNDAY–SATURDAY cells here -->
-            </div>
+            <div class="dow-weights" id="dow-weights-row"></div>
             <div class="dow-actions">
-              <button id="btn-apply-dow" class="secondary">
-                Apply to daily goals
-              </button>
-              <button id="btn-reset-dow" class="secondary">
-                Reset to equal & apply
-              </button>
+              <button id="btn-apply-dow" class="secondary">Apply to daily goals</button>
+              <button id="btn-reset-dow" class="secondary">Reset to equal &amp; apply</button>
               <span id="dow-status" class="microstatus"></span>
             </div>
           </div>
-
           <div id="summary" class="summary">—</div>
           <div id="calendar" class="calendar"></div>
         </div>
       </div>
     </section>
-
-    <!-- P&L (stub) -->
+    <!-- P&L stub -->
     <section id="page-pl" class="page hidden">
       <div class="container">
-        <h2>P&L (Coming Soon)</h2>
-        <p>We’ll render monthly P&L snapshots, variance, and drill-ins here.</p>
+        <h2>P&amp;L (Coming Soon)</h2>
+        <p>We’ll render monthly P&amp;L snapshots, variance, and drill‑ins here.</p>
       </div>
     </section>
-
-    <!-- Dept Walk (stub) -->
+    <!-- Dept Walk stub -->
     <section id="page-deptwalk" class="page hidden">
       <div class="container">
         <h2>Dept Walk (Coming Soon)</h2>
-        <p>Mobile-friendly capture + scoring will land here.</p>
+        <p>Mobile‑friendly capture + scoring will land here.</p>
       </div>
     </section>
-
-    <!-- Dept Walk Results (stub) -->
+    <!-- Dept Walk Results stub -->
     <section id="page-deptwalk-results" class="page hidden">
       <div class="container">
-        <h2>Dept Walk Results & Details (Coming Soon)</h2>
+        <h2>Dept Walk Results &amp; Details (Coming Soon)</h2>
       </div>
     </section>
-
-    <!-- B2B (stub) -->
+    <!-- B2B stub -->
     <section id="page-b2b" class="page hidden">
       <div class="container">
         <h2>B2B (Coming Soon)</h2>
-        <p>This space will support outside sales, in-store B2B tools, and reporting.</p>
+        <p>This space will support outside sales, in‑store B2B tools, and reporting.</p>
       </div>
     </section>
-
-    <!-- EIR (stub) -->
+    <!-- EIR stub -->
     <section id="page-eir" class="page hidden">
       <div class="container">
         <h2>Employee Incident Reports (Coming Soon)</h2>
-        <p>Employees will be able to document issues, route them by type, and track follow-up status.</p>
+        <p>Employees will be able to document issues, route them by type, and track follow‑up status.</p>
       </div>
     </section>
-
     <!-- Admin -->
     <section id="page-admin" class="page hidden">
       <div class="container">
         <h2>Admin</h2>
-
         <div class="admin-grid">
-          <!-- Users / Admin toggle -->
+          <!-- Users/Admin toggle -->
           <div class="card">
             <h3>Users</h3>
             <div class="row">
@@ -175,7 +149,6 @@
               <tbody></tbody>
             </table>
           </div>
-
           <!-- Store access mapping -->
           <div class="card">
             <h3>Store Access</h3>
@@ -198,7 +171,6 @@
               <tbody></tbody>
             </table>
           </div>
-
           <!-- Monthly goals -->
           <div class="card">
             <h3>Monthly Goals</h3>
@@ -221,29 +193,26 @@
               <label>ATV Goal ($)
                 <input id="mg-atv" type="number" step="0.01" />
               </label>
+              <button id="btn-suggest-goals" class="secondary">Suggest Goals</button>
               <button id="btn-save-goals">Save Goals</button>
             </div>
+            <!-- Container for goal suggestions -->
+            <div id="goal-suggestions" class="goal-suggestions hidden"></div>
             <div id="mg-status" class="microstatus">—</div>
           </div>
         </div>
       </div>
     </section>
-
   </main>
-
   <!-- Password reset view -->
   <section id="password-reset" class="container hidden">
     <h2>Set a new password</h2>
     <p>Enter a new password for your account.</p>
-
     <input id="newPassword" type="password" placeholder="New password" />
     <input id="confirmPassword" type="password" placeholder="Confirm new password" />
-
     <button id="btn-set-password">Update password</button>
-
     <div id="reset-message" class="auth-message"></div>
   </section>
-
   <!-- Day modal -->
   <div id="dayModal" class="modal hidden" aria-hidden="true">
     <div class="sheet">
