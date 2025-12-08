@@ -59,6 +59,9 @@ async function initAuth() {
       currentStoreId = storeSelect.value;
       await loadMonth(storeSelect.value, monthInput.value);
     }
+
+    // Initialize home page post feature after login
+    setupPostUi();
   } else {
     $("#whoami").textContent = "";
     $("#btn-signout")?.classList.add("hidden");
@@ -198,6 +201,9 @@ function routeTo(route) {
       break;
     case "eir":
       $("#page-eir")?.classList.remove("hidden");
+      break;
+    case "pop":
+      $("#page-pop")?.classList.remove("hidden");
       break;
     case "admin":
       if (profile?.is_admin) {
@@ -561,10 +567,13 @@ async function applyDowWeightsToMonth() {
   }
   const suggestions = computeSuggestions(month, monthlySales, monthlyTxn, dowWeights);
   const { days } = getMonthMeta(month);
+  // Use the same store_id type as monthly_goals (uuid or numeric)
+  // The mg.store_id value matches the primary key type expected in forecast_daily.
+  const storeKey = mg.store_id || storeId;
   const payload = days.map((d) => {
     const sugg = suggestions[d.date] || { sales: 0, txn: 0 };
     return {
-      store_id: storeId, // use raw storeId value; leave type as string for uuid-compatible
+      store_id: storeKey,
       date: d.date,
       sales_goal: sugg.sales,
       txn_goal: sugg.txn,
@@ -592,6 +601,80 @@ async function resetDowToEqualAndApply() {
   $("#dow-status").textContent = "Weights reset to equal. Applying to daily goals…";
   await applyDowWeightsToMonth();
 }
+
+// --------------------------------------------------------
+// Home page post creation and feed
+// --------------------------------------------------------
+function setupPostUi() {
+  // guard to avoid duplicate bindings
+  if (setupPostUi.bound) return;
+  setupPostUi.bound = true;
+  const btnAdd = document.getElementById("btn-add-post");
+  const modal = document.getElementById("postModal");
+  const btnClose = document.getElementById("btnClosePost");
+  const btnCancel = document.getElementById("btnPostCancel");
+  const btnSave = document.getElementById("btnPostSave");
+  const feed = document.querySelector("#page-home .feed");
+  if (!btnAdd || !modal || !btnClose || !btnCancel || !btnSave || !feed) return;
+  const hideModal = () => {
+    modal.classList.add("hidden");
+    // reset inputs
+    document.getElementById("post-title").value = "";
+    document.getElementById("post-body").value = "";
+    document.getElementById("post-file").value = "";
+  };
+  btnAdd.addEventListener("click", () => {
+    modal.classList.remove("hidden");
+  });
+  btnClose.addEventListener("click", hideModal);
+  btnCancel.addEventListener("click", hideModal);
+  btnSave.addEventListener("click", () => {
+    const title = document.getElementById("post-title").value.trim();
+    const body = document.getElementById("post-body").value.trim();
+    const fileInput = document.getElementById("post-file");
+    if (!title && !body) {
+      hideModal();
+      return;
+    }
+    // Create post card element
+    const card = document.createElement("div");
+    card.className = "post-card";
+    if (title) {
+      const h4 = document.createElement("h4");
+      h4.textContent = title;
+      card.appendChild(h4);
+    }
+    if (body) {
+      const p = document.createElement("p");
+      p.textContent = body;
+      card.appendChild(p);
+    }
+    // If a file is selected, display its name
+    if (fileInput.files && fileInput.files.length > 0) {
+      const file = fileInput.files[0];
+      const div = document.createElement("div");
+      div.className = "attachment";
+      div.textContent = `Attachment: ${file.name}`;
+      card.appendChild(div);
+    }
+    // simple reactions bar
+    const footer = document.createElement("div");
+    footer.className = "post-footer";
+    const likeBtn = document.createElement("button");
+    likeBtn.className = "small secondary";
+    likeBtn.textContent = "👍 0";
+    const commentBtn = document.createElement("button");
+    commentBtn.className = "small secondary";
+    commentBtn.textContent = "💬 0";
+    footer.appendChild(likeBtn);
+    footer.appendChild(commentBtn);
+    card.appendChild(footer);
+    // Append to top of feed
+    feed.insertBefore(card, feed.firstChild);
+    hideModal();
+  });
+}
+setupPostUi.bound = false;
 
 // ---- Suggest day-of-week weights based on historical sales ----
 /**
@@ -659,6 +742,33 @@ async function suggestDowWeights(storeId, yyyyMM) {
     }
   }
   return weights;
+}
+
+/**
+ * Resolve a store's UUID based on its numeric store_id code. If the stores table
+ * defines a UUID primary key (`id`) alongside a numeric `store_id`, this will
+ * return the UUID. Otherwise it returns the original storeId. If the query
+ * fails or the id is not found, the fallback is the provided storeId.
+ * @param {string|number} storeId
+ * @returns {Promise<string|number>}
+ */
+async function getStoreUuid(storeId) {
+  if (!storeId) return storeId;
+  try {
+    const { data, error } = await supabase
+      .from("stores")
+      .select("id")
+      .eq("store_id", storeId)
+      .maybeSingle();
+    if (error) {
+      console.warn("Error fetching store uuid", error);
+      return storeId;
+    }
+    return data?.id || storeId;
+  } catch (err) {
+    console.warn("Unexpected error resolving store uuid", err);
+    return storeId;
+  }
 }
 
 // ------ ADMIN ------
@@ -1091,103 +1201,4 @@ function collectModalValues() {
     if (!el) return;
     el.textContent = message || "";
     if (type === "error") {
-      el.style.color = "#c00";
-    } else if (type === "success") {
-      el.style.color = "#080";
-    } else {
-      el.style.color = "#555";
-    }
-  }
-  function showLoginView() {
-    if (loggedOutSection) loggedOutSection.classList.remove("hidden");
-    if (topNav) topNav.classList.add("hidden");
-    pages.forEach((p) => p.classList.add("hidden"));
-    if (passwordResetSection) passwordResetSection.classList.add("hidden");
-  }
-  function showResetView() {
-    if (loggedOutSection) loggedOutSection.classList.add("hidden");
-    if (topNav) topNav.classList.add("hidden");
-    pages.forEach((p) => p.classList.add("hidden"));
-    if (passwordResetSection) passwordResetSection.classList.remove("hidden");
-  }
-  btnForgot.addEventListener("click", async () => {
-    const email = emailInput.value.trim();
-    if (!email) {
-      showStatusMessage(authMessageEl, "Please enter your email address first.", "error");
-      return;
-    }
-    showStatusMessage(authMessageEl, "Sending password reset email…");
-    const redirectTo = `${window.location.origin}/#/reset-password`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
-    if (error) {
-      showStatusMessage(authMessageEl, `Error: ${error.message}`, "error");
-    } else {
-      showStatusMessage(authMessageEl, "Password reset email sent. Please check your inbox.", "success");
-    }
-  });
-  if (window.location.hash && window.location.hash.includes("type=recovery")) {
-    showResetView();
-    showStatusMessage(resetMessageEl, "Please enter a new password for your account.");
-  }
-  supabase.auth.onAuthStateChange((event) => {
-    if (event === "PASSWORD_RECOVERY") {
-      showResetView();
-      showStatusMessage(resetMessageEl, "Token verified. Please enter a new password for your account.");
-    }
-  });
-  if (btnSetPassword) {
-    btnSetPassword.addEventListener("click", async () => {
-      const newPassword = newPasswordInput.value;
-      const confirmPassword = confirmPasswordInput.value;
-      if (!newPassword || !confirmPassword) {
-        showStatusMessage(resetMessageEl, "Please enter and confirm your new password.", "error");
-        return;
-      }
-      if (newPassword !== confirmPassword) {
-        showStatusMessage(resetMessageEl, "Passwords do not match.", "error");
-        return;
-      }
-      showStatusMessage(resetMessageEl, "Updating password…");
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) {
-        showStatusMessage(resetMessageEl, `Error: ${error.message}`, "error");
-        return;
-      }
-      showStatusMessage(resetMessageEl, "Password updated. You can now sign in with your new password.", "success");
-      setTimeout(() => {
-        showLoginView();
-      }, 2000);
-    });
-  }
-})();
-
-// ---- start the app ----
-initAuth();
-// wire DOW buttons
-$("#btn-apply-dow")?.addEventListener("click", applyDowWeightsToMonth);
-$("#btn-reset-dow")?.addEventListener("click", resetDowToEqualAndApply);
-
-// wire suggestion for DOW weights
-$("#btn-suggest-dow")?.addEventListener("click", async () => {
-  const storeId = $("#storeSelect")?.value;
-  const monthVal = $("#monthInput")?.value;
-  if (!storeId || !monthVal) {
-    $("#dow-status").textContent = "Select a store and month first.";
-    return;
-  }
-  $("#dow-status").textContent = "Calculating day-of-week weight suggestions…";
-  const weights = await suggestDowWeights(storeId, monthVal);
-  if (!weights) {
-    $("#dow-status").textContent = "No historical data available for weight suggestions.";
-    return;
-  }
-  // Apply weights to inputs
-  for (let i = 0; i < 7; i++) {
-    const inp = document.getElementById(`dow-weight-${i}`);
-    if (inp) {
-      inp.value = weights[i].toFixed(2);
-    }
-  }
-  $("#dow-status").textContent =
-    "Suggested weights loaded from historical data. Review and click Apply to daily goals.";
-});
+      el
