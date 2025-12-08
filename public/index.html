@@ -1,522 +1,73 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Skye Bridge Sales Forecasting</title>
-  <!-- Supabase (UMD) -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <!-- Inline config for Supabase credentials -->
-  <script>
-    window.APP_CONFIG = {
-      SUPABASE_URL: "https://bvyrxqfffaxthrjfxjue.supabase.co",
-      SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM"
-    };
-  </script>
-  <link rel="stylesheet" href="./styles.css?v=2025-12-08-01" />
-  <script defer src="./app.js?v=2025-12-08-01"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skye Bridge Forecasting &amp; Operations</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
-  <header class="appbar">
-    <h1>Sales Forecasting</h1>
-    <div class="authbox">
-      <span id="whoami"></span>
-      <button id="btn-signout" class="secondary hidden">Sign out</button>
-    </div>
-  </header>
-  <!-- Nav -->
-  <nav id="topNav" class="nav hidden">
-    <button data-route="home">Home</button>
-    <button data-route="sales">Sales Goals &amp; Current Results</button>
-    <button data-route="pl">P&amp;L</button>
-    <button data-route="deptwalk">Dept Walk</button>
-    <button data-route="deptwalk-results">Dept Walk Results &amp; Details</button>
-    <button data-route="b2b">B2B</button>
-    <button data-route="eir">EIR – Incident Reports</button>
-    <button data-route="pop">Library &amp; POP Tools</button>
-    <button id="nav-admin" data-route="admin" class="admin-only hidden">Admin</button>
+  <!-- Top navigation bar -->
+  <nav id="topNav">
+    <button data-route="home" class="active">Home</button>
+    <button data-route="sales">Sales</button>
+    <button data-route="admin" class="hidden">Admin</button>
+    <span id="whoami"></span>
+    <button id="btn-signin">Sign in</button>
+    <button id="btn-signout" class="hidden">Sign out</button>
   </nav>
-  <!-- Status bar -->
-  <div id="status" class="status">Loading…</div>
-  <!-- Logged-out view -->
-  <section id="logged-out" class="container">
-    <div id="auth-area">
-      <input id="email" type="email" placeholder="Email" />
-      <input id="password" type="password" placeholder="Password" />
-      <div class="auth-actions">
-        <button id="btn-signin">Sign in</button>
-        <button id="btn-forgot" type="button" class="link-button">
-          Forgot password?
-        </button>
-      </div>
-      <div id="auth-message" class="auth-message"></div>
-    </div>
-  </section>
+
+  <!-- Status messages -->
+  <div id="status"></div>
+
   <!-- Pages -->
-  <main>
-    <!-- Home / Communications Hub -->
-    <section id="page-home" class="page hidden">
-      <div class="container">
-        <h2>Communications Hub</h2>
-        <p class="muted">Pinned announcements, role‑based posts, comments and reactions.</p>
-        <!-- Add post button for creating new announcements -->
-        <div class="row" style="justify-content:flex-end;margin-bottom:12px;">
-          <button id="btn-add-post" class="primary">Add Post</button>
-        </div>
-        <div class="feed">
-          <!-- Example pinned post -->
-          <div class="post-card pinned">
-            <div class="post-header">
-              <span class="badge">Pinned</span>
-              <h4>Holiday Hours Reminder</h4>
-            </div>
-            <p>All stores will close early at 5PM on December 24th. Please notify your teams.</p>
-            <div class="post-footer">
-              <button class="small secondary">👍 12</button>
-              <button class="small secondary">💬 3</button>
-            </div>
-          </div>
-          <!-- Sample posts -->
-          <div class="post-card">
-            <h4>Weekly Tips: Driving ATV</h4>
-            <p>Remember to mention add‑on items at checkout. Focus on complimentary products to increase ATV.</p>
-            <div class="post-footer">
-              <button class="small secondary">👍 5</button>
-              <button class="small secondary">💬 1</button>
-            </div>
-          </div>
-          <div class="post-card">
-            <h4>Safety Spotlight</h4>
-            <p>Please review the updated safety procedures for ladder use. The document is in the Library.</p>
-            <div class="post-footer">
-              <button class="small secondary">👍 8</button>
-              <button class="small secondary">💬 2</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-    <!-- Sales page -->
-    <section id="page-sales" class="page hidden">
-      <div id="app" class="container">
-        <div class="controls">
-          <label>Store
-            <select id="storeSelect"></select>
-          </label>
-          <label>Month
-            <input id="monthInput" type="month" />
-          </label>
-          <!-- No explicit load button; data loads automatically when selections change -->
-        </div>
-        <div class="month-layout">
-          <!-- Day-of-week weights aligned over calendar -->
-          <div id="dow-toolbar" class="dow-toolbar hidden">
-            <div class="dow-weights" id="dow-weights-row"></div>
-            <div class="dow-actions">
-              <button id="btn-apply-dow" class="secondary">Apply to daily goals</button>
-              <button id="btn-reset-dow" class="secondary">Reset to equal &amp; apply</button>
-              <!-- Suggest dow weights from historical data (admin only) -->
-              <button id="btn-suggest-dow" class="secondary hidden">Suggest weights</button>
-              <span id="dow-status" class="microstatus"></span>
-            </div>
-          </div>
-          <div id="summary" class="summary">—</div>
-          <div id="calendar" class="calendar"></div>
-        </div>
-      </div>
-    </section>
-    <!-- P&L analysis -->
-    <section id="page-pl" class="page hidden">
-      <div class="container">
-        <h2>P&amp;L Analysis</h2>
-        <p class="muted">Compare simplified vs. true P&amp;L, controllables, and goals.</p>
-        <div class="pl-grid">
-          <div class="card">
-            <h3>Simplified P&amp;L</h3>
-            <p class="muted">High‑level view of controllable expenses and margin.</p>
-            <table class="table">
-              <thead>
-                <tr><th>Category</th><th>Actual</th><th>Goal</th><th>Variance</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>Sales</td><td>$0</td><td>$0</td><td>—</td></tr>
-                <tr><td>Labor</td><td>$0</td><td>$0</td><td>—</td></tr>
-                <tr><td>Shrink</td><td>$0</td><td>$0</td><td>—</td></tr>
-                <tr><td>Margin</td><td>$0</td><td>$0</td><td>—</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="card">
-            <h3>New Month Goals</h3>
-            <p class="muted">Set targets for the upcoming month based on forecasts.</p>
-            <div class="row">
-              <label>Sales Goal ($)
-                <input type="number" step="0.01" placeholder="0.00" />
-              </label>
-              <label>Labor % Goal
-                <input type="number" step="0.1" placeholder="0.0" />
-              </label>
-            </div>
-            <div class="row">
-              <label>Shrink % Goal
-                <input type="number" step="0.1" placeholder="0.0" />
-              </label>
-              <label>Margin % Goal
-                <input type="number" step="0.1" placeholder="0.0" />
-              </label>
-            </div>
-            <button class="secondary">Save P&amp;L Goals</button>
-          </div>
-          <div class="card">
-            <h3>True P&amp;L (Last Month)</h3>
-            <p class="muted">Actual results from the completed accounting period.</p>
-            <table class="table">
-              <thead>
-                <tr><th>Category</th><th>Amount</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>Net Sales</td><td>$0</td></tr>
-                <tr><td>Cost of Goods</td><td>$0</td></tr>
-                <tr><td>Operating Expenses</td><td>$0</td></tr>
-                <tr><td>Net Profit</td><td>$0</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-    <!-- Dept Walks -->
-    <section id="page-deptwalk" class="page hidden">
-      <div class="container">
-        <h2>Dept Walk</h2>
-        <p class="muted">Capture aisle issues, photos and scores on the go.</p>
-        <div class="card">
-          <h3>New Observation</h3>
-          <div class="row">
-            <label>Category
-              <select>
-                <option value="">Select…</option>
-                <option>Safety</option>
-                <option>Inventory</option>
-                <option>Presentation</option>
-                <option>Staffing</option>
-              </select>
-            </label>
-            <label>Photo
-              <input type="file" accept="image/*" />
-            </label>
-          </div>
-          <label>Description
-            <textarea rows="3" placeholder="Describe the issue…"></textarea>
-          </label>
-          <button class="secondary">Submit Observation</button>
-        </div>
-        <div class="card">
-          <h3>Recent Observations</h3>
-          <table class="table">
-            <thead><tr><th>Category</th><th>Issue</th><th>Status</th></tr></thead>
-            <tbody>
-              <tr><td>Safety</td><td>Spill in aisle 3</td><td>Open</td></tr>
-              <tr><td>Inventory</td><td>Low stock on nails</td><td>In Progress</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-    <!-- Dept Walk Results & Task Management -->
-    <section id="page-deptwalk-results" class="page hidden">
-      <div class="container">
-        <h2>Dept Walk Results &amp; Task Management</h2>
-        <p class="muted">Review photos, notes and track tasks to completion.</p>
-        <div class="results-grid">
-          <div class="card">
-            <h3>Image Gallery</h3>
-            <div class="gallery">
-              <div class="thumbnail"></div>
-              <div class="thumbnail"></div>
-              <div class="thumbnail"></div>
-            </div>
-          </div>
-          <div class="card">
-            <h3>Notes Archive</h3>
-            <ul class="notes-list">
-              <li><strong>Spill in aisle 3:</strong> Cleaned up on 12/1</li>
-              <li><strong>Low stock on nails:</strong> Restocked 12/2</li>
-            </ul>
-          </div>
-          <div class="card">
-            <h3>Tasks</h3>
-            <table class="table">
-              <thead><tr><th>Task</th><th>Assignee</th><th>Status</th></tr></thead>
-              <tbody>
-                <tr><td>Clean spill in aisle 3</td><td>Alex</td><td><span class="badge">Done</span></td></tr>
-                <tr><td>Order nails</td><td>Jamie</td><td><span class="badge">In Progress</span></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-    <!-- B2B CRM -->
-    <section id="page-b2b" class="page hidden">
-      <div class="container">
-        <h2>B2B CRM</h2>
-        <p class="muted">Manage customer pipeline, visit notes and follow‑ups.</p>
-        <div class="card">
-          <h3>Customer List</h3>
-          <table class="table">
-            <thead><tr><th>Customer</th><th>Stage</th><th>Last Contact</th><th>Next Action</th></tr></thead>
-            <tbody>
-              <tr><td>Acme Construction</td><td>Quote Sent</td><td>11/30</td><td>Follow up</td></tr>
-              <tr><td>Home Builders Inc.</td><td>Initial</td><td>12/1</td><td>Schedule visit</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="card">
-          <h3>Add New Customer</h3>
-          <div class="row">
-            <label>Name
-              <input type="text" placeholder="Customer name" />
-            </label>
-            <label>Stage
-              <select>
-                <option value="">Select…</option>
-                <option>Initial</option>
-                <option>Quote Sent</option>
-                <option>Negotiation</option>
-                <option>Closed Won</option>
-                <option>Closed Lost</option>
-              </select>
-            </label>
-          </div>
-          <label>Notes
-            <textarea rows="3"></textarea>
-          </label>
-          <button class="secondary">Add Customer</button>
-        </div>
-      </div>
-    </section>
-    <!-- EIR – Incident Reporting -->
-    <section id="page-eir" class="page hidden">
-      <div class="container">
-        <h2>Employee Incident Reports</h2>
-        <p class="muted">Submit and track incidents through resolution.</p>
-        <div class="card">
-          <h3>New Incident</h3>
-          <div class="row">
-            <label>Type
-              <select>
-                <option value="">Select…</option>
-                <option>Injury</option>
-                <option>Harassment</option>
-                <option>Customer Complaint</option>
-                <option>Equipment Damage</option>
-              </select>
-            </label>
-            <label>Attachment
-              <input type="file" />
-            </label>
-          </div>
-          <label>Description
-            <textarea rows="3"></textarea>
-          </label>
-          <button class="secondary">Submit Incident</button>
-        </div>
-        <div class="card">
-          <h3>Reported Incidents</h3>
-          <table class="table">
-            <thead><tr><th>Type</th><th>Description</th><th>Status</th></tr></thead>
-            <tbody>
-              <tr><td>Injury</td><td>Cut finger on blade</td><td>Open</td></tr>
-              <tr><td>Customer Complaint</td><td>Rude service at register</td><td>In Review</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+  <div id="page-home" class="page">
+    <h1>Communications Hub</h1>
+    <p>Welcome to Skye Bridge internal operations platform. Use the navigation above to access modules.</p>
+  </div>
 
-    <!-- Library & POP Tools -->
-    <section id="page-pop" class="page hidden">
-      <div class="container">
-        <h2>Library &amp; POP Tools</h2>
-        <p class="muted">Browse documents by category and generate POP signs.</p>
-        <div class="card">
-          <h3>Document Library</h3>
-          <table class="table">
-            <thead><tr><th>Name</th><th>Category</th><th>Uploaded</th><th>Actions</th></tr></thead>
-            <tbody>
-              <tr><td>Holiday Planogram.pdf</td><td>Planogram</td><td>11/28</td><td><button class="small secondary">Download</button></td></tr>
-              <tr><td>Safety Training.docx</td><td>Safety</td><td>10/15</td><td><button class="small secondary">Download</button></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="card">
-          <h3>Create POP Sign</h3>
-          <div class="row">
-            <label>Product Name
-              <input type="text" placeholder="e.g. Hammer" />
-            </label>
-            <label>Price ($)
-              <input type="number" step="0.01" placeholder="0.00" />
-            </label>
-          </div>
-          <label>Upload Image
-            <input type="file" accept="image/*" />
-          </label>
-          <button class="secondary">Generate Sign</button>
-        </div>
-      </div>
-    </section>
-    <!-- Admin -->
-    <section id="page-admin" class="page hidden">
-      <div class="container">
-        <h2>Admin</h2>
-        <div class="admin-grid">
-          <!-- Users/Admin toggle -->
-          <div class="card">
-            <h3>Users</h3>
-            <div class="row">
-              <input id="admin-user-search" placeholder="Search email…" />
-              <button id="btn-refresh-users" class="secondary">Refresh</button>
-            </div>
-            <table id="tbl-users" class="table">
-              <thead>
-                <tr>
-                  <th>Email</th>
-                  <th>Admin?</th>
-                  <th>User Id</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <!-- Store access mapping -->
-          <div class="card">
-            <h3>Store Access</h3>
-            <div class="row">
-              <label>User
-                <select id="sa-userSelect"></select>
-              </label>
-              <label>Store
-                <select id="sa-storeSelect"></select>
-              </label>
-              <button id="btn-add-access">Grant access</button>
-            </div>
-            <table id="tbl-access" class="table">
-              <thead>
-                <tr>
-                  <th>Store</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
+  <div id="page-sales" class="page hidden">
+    <h1>Sales &amp; Forecasting</h1>
+    <!-- store and month selection -->
+    <div class="toolbar">
+      <label for="storeSelect">Store:</label>
+      <select id="storeSelect"></select>
+      <label for="monthInput">Month:</label>
+      <input type="month" id="monthInput">
+      <button id="btn-load" class="pill">Load</button>
+    </div>
+    <!-- summary metrics -->
+    <div id="summary" class="summary"></div>
+    <!-- calendar grid -->
+    <div id="calendar" class="calendar"></div>
+  </div>
 
-          <!-- Tab access management -->
-          <div class="card">
-            <h3>Tab Access</h3>
-            <div class="row">
-              <label>User
-                <select id="ta-userSelect"></select>
-              </label>
-            </div>
-            <table id="tbl-tab-access" class="table">
-              <thead>
-                <tr>
-                  <th>Tab</th>
-                  <th>Has access?</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <!-- Sales goal insights and monthly goals -->
-          <div class="card">
-            <h3>Sales Goal Insights & Monthly Goals</h3>
-            <div class="row">
-              <label>Store
-                <select id="mg-storeSelect"></select>
-              </label>
-              <label>Month
-                <input id="mg-monthInput" type="month" />
-              </label>
-              <button id="btn-load-goals" class="secondary">Load</button>
-            </div>
-            <div class="row">
-              <label>Sales Goal ($)
-                <input id="mg-sales" type="number" step="0.01" />
-              </label>
-              <label>Txn Goal
-                <input id="mg-txn" type="number" step="1" />
-              </label>
-              <label>ATV Goal ($)
-                <input id="mg-atv" type="number" step="0.01" />
-              </label>
-              <button id="btn-suggest-goals" class="secondary">Suggest Goals</button>
-              <button id="btn-save-goals">Save Goals</button>
-            </div>
-            <!-- Container for goal suggestions -->
-            <div id="goal-suggestions" class="goal-suggestions hidden"></div>
-            <div id="mg-status" class="microstatus">—</div>
-          </div>
-        </div>
+  <div id="page-admin" class="page hidden">
+    <h1>Admin Home</h1>
+    <div class="admin-cards">
+      <div class="card" data-admin="goals">Goals Admin</div>
+      <div class="card" data-admin="employees">Employee Management</div>
+      <div class="card" data-admin="import">Data Import Tools</div>
+    </div>
+    <!-- Placeholder for admin subpages -->
+    <div id="admin-subpage"></div>
+  </div>
+
+  <!-- Day details modal -->
+  <div id="dayModal" class="modal hidden">
+    <div class="modal-content">
+      <h2 id="modalTitle"></h2>
+      <div id="modal-body">
+        <!-- KPI cards inserted here -->
       </div>
-    </section>
-  </main>
-  <!-- Password reset view -->
-  <section id="password-reset" class="container hidden">
-    <h2>Set a new password</h2>
-    <p>Enter a new password for your account.</p>
-    <input id="newPassword" type="password" placeholder="New password" />
-    <input id="confirmPassword" type="password" placeholder="Confirm new password" />
-    <button id="btn-set-password">Update password</button>
-    <div id="reset-message" class="auth-message"></div>
-  </section>
-  <!-- Day modal -->
-  <div id="dayModal" class="modal hidden" aria-hidden="true">
-    <div class="sheet">
-      <header>
-        <h2 id="modalTitle" style="margin:0"></h2>
-        <span id="modalBadge" class="badge">—</span>
-        <button id="btn-clear-all" class="secondary small">Clear all</button>
-      </header>
-      <div id="modalKpis"></div>
-      <div class="actions">
-        <button id="btnCloseModal" class="close">Close</button>
-        <button id="btnSaveModal" class="save">Save</button>
+      <div class="modal-actions">
+        <button id="btnSaveModal" class="pill">Save</button>
+        <button id="btn-clear-all" class="pill">Clear Actuals</button>
+        <button id="btnCloseModal" class="pill">Close</button>
       </div>
     </div>
   </div>
 
-  <!-- New Post modal -->
-  <div id="postModal" class="modal hidden" aria-hidden="true">
-    <div class="sheet">
-      <header style="display:flex;justify-content:space-between;align-items:center;">
-        <h2 style="margin:0">Create Post</h2>
-        <button id="btnClosePost" class="close">Close</button>
-      </header>
-      <div class="post-form" style="margin-top:12px;display:flex;flex-direction:column;gap:10px;">
-        <label>Title
-          <input id="post-title" type="text" placeholder="Enter a title" />
-        </label>
-        <label>Message
-          <textarea id="post-body" rows="4" placeholder="Write your update or announcement…"></textarea>
-        </label>
-        <label>Attachment
-          <input id="post-file" type="file" />
-        </label>
-      </div>
-      <div class="actions" style="display:flex;justify-content:flex-end;margin-top:12px;gap:8px;">
-        <button id="btnPostCancel" class="secondary">Cancel</button>
-        <button id="btnPostSave" class="save">Post</button>
-      </div>
-    </div>
-  </div>
+  <script src="app.js"></script>
 </body>
-
 </html>
