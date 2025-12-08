@@ -55,11 +55,42 @@
   </section>
   <!-- Pages -->
   <main>
-    <!-- Home -->
+    <!-- Home / Communications Hub -->
     <section id="page-home" class="page hidden">
       <div class="container">
-        <h2>Welcome</h2>
-        <p>This will become a simple landing page with links, tips, and quick KPIs.</p>
+        <h2>Communications Hub</h2>
+        <p class="muted">Pinned announcements, role‑based posts, comments and reactions.</p>
+        <div class="feed">
+          <!-- Example pinned post -->
+          <div class="post-card pinned">
+            <div class="post-header">
+              <span class="badge">Pinned</span>
+              <h4>Holiday Hours Reminder</h4>
+            </div>
+            <p>All stores will close early at 5PM on December 24th. Please notify your teams.</p>
+            <div class="post-footer">
+              <button class="small secondary">👍 12</button>
+              <button class="small secondary">💬 3</button>
+            </div>
+          </div>
+          <!-- Sample posts -->
+          <div class="post-card">
+            <h4>Weekly Tips: Driving ATV</h4>
+            <p>Remember to mention add‑on items at checkout. Focus on complimentary products to increase ATV.</p>
+            <div class="post-footer">
+              <button class="small secondary">👍 5</button>
+              <button class="small secondary">💬 1</button>
+            </div>
+          </div>
+          <div class="post-card">
+            <h4>Safety Spotlight</h4>
+            <p>Please review the updated safety procedures for ladder use. The document is in the Library.</p>
+            <div class="post-footer">
+              <button class="small secondary">👍 8</button>
+              <button class="small secondary">💬 2</button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
     <!-- Sales page -->
@@ -93,38 +124,213 @@
         </div>
       </div>
     </section>
-    <!-- P&L stub -->
+    <!-- P&L analysis -->
     <section id="page-pl" class="page hidden">
       <div class="container">
-        <h2>P&amp;L (Coming Soon)</h2>
-        <p>We’ll render monthly P&amp;L snapshots, variance, and drill‑ins here.</p>
+        <h2>P&amp;L Analysis</h2>
+        <p class="muted">Compare simplified vs. true P&amp;L, controllables, and goals.</p>
+        <div class="pl-grid">
+          <div class="card">
+            <h3>Simplified P&amp;L</h3>
+            <p class="muted">High‑level view of controllable expenses and margin.</p>
+            <table class="table">
+              <thead>
+                <tr><th>Category</th><th>Actual</th><th>Goal</th><th>Variance</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Sales</td><td>$0</td><td>$0</td><td>—</td></tr>
+                <tr><td>Labor</td><td>$0</td><td>$0</td><td>—</td></tr>
+                <tr><td>Shrink</td><td>$0</td><td>$0</td><td>—</td></tr>
+                <tr><td>Margin</td><td>$0</td><td>$0</td><td>—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h3>New Month Goals</h3>
+            <p class="muted">Set targets for the upcoming month based on forecasts.</p>
+            <div class="row">
+              <label>Sales Goal ($)
+                <input type="number" step="0.01" placeholder="0.00" />
+              </label>
+              <label>Labor % Goal
+                <input type="number" step="0.1" placeholder="0.0" />
+              </label>
+            </div>
+            <div class="row">
+              <label>Shrink % Goal
+                <input type="number" step="0.1" placeholder="0.0" />
+              </label>
+              <label>Margin % Goal
+                <input type="number" step="0.1" placeholder="0.0" />
+              </label>
+            </div>
+            <button class="secondary">Save P&amp;L Goals</button>
+          </div>
+          <div class="card">
+            <h3>True P&amp;L (Last Month)</h3>
+            <p class="muted">Actual results from the completed accounting period.</p>
+            <table class="table">
+              <thead>
+                <tr><th>Category</th><th>Amount</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Net Sales</td><td>$0</td></tr>
+                <tr><td>Cost of Goods</td><td>$0</td></tr>
+                <tr><td>Operating Expenses</td><td>$0</td></tr>
+                <tr><td>Net Profit</td><td>$0</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
-    <!-- Dept Walk stub -->
+    <!-- Dept Walks -->
     <section id="page-deptwalk" class="page hidden">
       <div class="container">
-        <h2>Dept Walk (Coming Soon)</h2>
-        <p>Mobile‑friendly capture + scoring will land here.</p>
+        <h2>Dept Walk</h2>
+        <p class="muted">Capture aisle issues, photos and scores on the go.</p>
+        <div class="card">
+          <h3>New Observation</h3>
+          <div class="row">
+            <label>Category
+              <select>
+                <option value="">Select…</option>
+                <option>Safety</option>
+                <option>Inventory</option>
+                <option>Presentation</option>
+                <option>Staffing</option>
+              </select>
+            </label>
+            <label>Photo
+              <input type="file" accept="image/*" />
+            </label>
+          </div>
+          <label>Description
+            <textarea rows="3" placeholder="Describe the issue…"></textarea>
+          </label>
+          <button class="secondary">Submit Observation</button>
+        </div>
+        <div class="card">
+          <h3>Recent Observations</h3>
+          <table class="table">
+            <thead><tr><th>Category</th><th>Issue</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>Safety</td><td>Spill in aisle 3</td><td>Open</td></tr>
+              <tr><td>Inventory</td><td>Low stock on nails</td><td>In Progress</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
-    <!-- Dept Walk Results stub -->
+    <!-- Dept Walk Results & Task Management -->
     <section id="page-deptwalk-results" class="page hidden">
       <div class="container">
-        <h2>Dept Walk Results &amp; Details (Coming Soon)</h2>
+        <h2>Dept Walk Results &amp; Task Management</h2>
+        <p class="muted">Review photos, notes and track tasks to completion.</p>
+        <div class="results-grid">
+          <div class="card">
+            <h3>Image Gallery</h3>
+            <div class="gallery">
+              <div class="thumbnail"></div>
+              <div class="thumbnail"></div>
+              <div class="thumbnail"></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Notes Archive</h3>
+            <ul class="notes-list">
+              <li><strong>Spill in aisle 3:</strong> Cleaned up on 12/1</li>
+              <li><strong>Low stock on nails:</strong> Restocked 12/2</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Tasks</h3>
+            <table class="table">
+              <thead><tr><th>Task</th><th>Assignee</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>Clean spill in aisle 3</td><td>Alex</td><td><span class="badge">Done</span></td></tr>
+                <tr><td>Order nails</td><td>Jamie</td><td><span class="badge">In Progress</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
-    <!-- B2B stub -->
+    <!-- B2B CRM -->
     <section id="page-b2b" class="page hidden">
       <div class="container">
-        <h2>B2B (Coming Soon)</h2>
-        <p>This space will support outside sales, in‑store B2B tools, and reporting.</p>
+        <h2>B2B CRM</h2>
+        <p class="muted">Manage customer pipeline, visit notes and follow‑ups.</p>
+        <div class="card">
+          <h3>Customer List</h3>
+          <table class="table">
+            <thead><tr><th>Customer</th><th>Stage</th><th>Last Contact</th><th>Next Action</th></tr></thead>
+            <tbody>
+              <tr><td>Acme Construction</td><td>Quote Sent</td><td>11/30</td><td>Follow up</td></tr>
+              <tr><td>Home Builders Inc.</td><td>Initial</td><td>12/1</td><td>Schedule visit</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Add New Customer</h3>
+          <div class="row">
+            <label>Name
+              <input type="text" placeholder="Customer name" />
+            </label>
+            <label>Stage
+              <select>
+                <option value="">Select…</option>
+                <option>Initial</option>
+                <option>Quote Sent</option>
+                <option>Negotiation</option>
+                <option>Closed Won</option>
+                <option>Closed Lost</option>
+              </select>
+            </label>
+          </div>
+          <label>Notes
+            <textarea rows="3"></textarea>
+          </label>
+          <button class="secondary">Add Customer</button>
+        </div>
       </div>
     </section>
-    <!-- EIR stub -->
+    <!-- EIR – Incident Reporting -->
     <section id="page-eir" class="page hidden">
       <div class="container">
-        <h2>Employee Incident Reports (Coming Soon)</h2>
-        <p>Employees will be able to document issues, route them by type, and track follow‑up status.</p>
+        <h2>Employee Incident Reports</h2>
+        <p class="muted">Submit and track incidents through resolution.</p>
+        <div class="card">
+          <h3>New Incident</h3>
+          <div class="row">
+            <label>Type
+              <select>
+                <option value="">Select…</option>
+                <option>Injury</option>
+                <option>Harassment</option>
+                <option>Customer Complaint</option>
+                <option>Equipment Damage</option>
+              </select>
+            </label>
+            <label>Attachment
+              <input type="file" />
+            </label>
+          </div>
+          <label>Description
+            <textarea rows="3"></textarea>
+          </label>
+          <button class="secondary">Submit Incident</button>
+        </div>
+        <div class="card">
+          <h3>Reported Incidents</h3>
+          <table class="table">
+            <thead><tr><th>Type</th><th>Description</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>Injury</td><td>Cut finger on blade</td><td>Open</td></tr>
+              <tr><td>Customer Complaint</td><td>Rude service at register</td><td>In Review</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
     <!-- Admin -->
