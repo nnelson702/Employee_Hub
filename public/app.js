@@ -1201,4 +1201,103 @@ function collectModalValues() {
     if (!el) return;
     el.textContent = message || "";
     if (type === "error") {
-      el
+      el.style.color = "#c00";
+    } else if (type === "success") {
+      el.style.color = "#080";
+    } else {
+      el.style.color = "#555";
+    }
+  }
+  function showLoginView() {
+    if (loggedOutSection) loggedOutSection.classList.remove("hidden");
+    if (topNav) topNav.classList.add("hidden");
+    pages.forEach((p) => p.classList.add("hidden"));
+    if (passwordResetSection) passwordResetSection.classList.add("hidden");
+  }
+  function showResetView() {
+    if (loggedOutSection) loggedOutSection.classList.add("hidden");
+    if (topNav) topNav.classList.add("hidden");
+    pages.forEach((p) => p.classList.add("hidden"));
+    if (passwordResetSection) passwordResetSection.classList.remove("hidden");
+  }
+  btnForgot.addEventListener("click", async () => {
+    const email = emailInput.value.trim();
+    if (!email) {
+      showStatusMessage(authMessageEl, "Please enter your email address first.", "error");
+      return;
+    }
+    showStatusMessage(authMessageEl, "Sending password reset email…");
+    const redirectTo = `${window.location.origin}/#/reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) {
+      showStatusMessage(authMessageEl, `Error: ${error.message}`, "error");
+    } else {
+      showStatusMessage(authMessageEl, "Password reset email sent. Please check your inbox.", "success");
+    }
+  });
+  if (window.location.hash && window.location.hash.includes("type=recovery")) {
+    showResetView();
+    showStatusMessage(resetMessageEl, "Please enter a new password for your account.");
+  }
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === "PASSWORD_RECOVERY") {
+      showResetView();
+      showStatusMessage(resetMessageEl, "Token verified. Please enter a new password for your account.");
+    }
+  });
+  if (btnSetPassword) {
+    btnSetPassword.addEventListener("click", async () => {
+      const newPassword = newPasswordInput.value;
+      const confirmPassword = confirmPasswordInput.value;
+      if (!newPassword || !confirmPassword) {
+        showStatusMessage(resetMessageEl, "Please enter and confirm your new password.", "error");
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        showStatusMessage(resetMessageEl, "Passwords do not match.", "error");
+        return;
+      }
+      showStatusMessage(resetMessageEl, "Updating password…");
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        showStatusMessage(resetMessageEl, `Error: ${error.message}`, "error");
+        return;
+      }
+      showStatusMessage(resetMessageEl, "Password updated. You can now sign in with your new password.", "success");
+      setTimeout(() => {
+        showLoginView();
+      }, 2000);
+    });
+  }
+})();
+
+// ---- start the app ----
+initAuth();
+// wire DOW buttons
+$("#btn-apply-dow")?.addEventListener("click", applyDowWeightsToMonth);
+$("#btn-reset-dow")?.addEventListener("click", resetDowToEqualAndApply);
+
+// wire suggestion for DOW weights
+$("#btn-suggest-dow")?.addEventListener("click", async () => {
+  const storeId = $("#storeSelect")?.value;
+  const monthVal = $("#monthInput")?.value;
+  if (!storeId || !monthVal) {
+    $("#dow-status").textContent = "Select a store and month first.";
+    return;
+  }
+  $("#dow-status").textContent = "Calculating day-of-week weight suggestions…";
+  const weights = await suggestDowWeights(storeId, monthVal);
+  if (!weights) {
+    $("#dow-status").textContent = "No historical data available for weight suggestions.";
+    return;
+  }
+  // Apply weights to inputs
+  for (let i = 0; i < 7; i++) {
+    const inp = document.getElementById(`dow-weight-${i}`);
+    if (inp) {
+      inp.value = weights[i].toFixed(2);
+    }
+  }
+  $("#dow-status").textContent =
+    "Suggested weights loaded from historical data. Review and click Apply to daily goals.";
+});
