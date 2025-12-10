@@ -1,399 +1,96 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Skye Bridge Forecasting & Operations</title>
-  <link rel="stylesheet" href="styles.css" />
-  <!-- Supabase UMD -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skye Bridge Forecasting &amp; Operations</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <!-- Top navigation bar -->
-  <nav id="topNav" class="hidden">
+  <nav id="topNav">
     <button data-route="home" class="active">Home</button>
-    <button data-route="sales">Sales Goals &amp; Current Results</button>
-    <button data-route="pl">P&amp;L</button>
-    <button data-route="deptwalk">Dept Walk</button>
-    <button data-route="deptwalk-results">Dept Walk Results</button>
-    <button data-route="b2b">B2B</button>
-    <button data-route="eir">EIR</button>
-    <button data-route="pop">POP / Library</button>
-    <button id="nav-admin" data-route="admin" class="hidden">Admin</button>
-    <div class="nav-right">
-      <span id="whoami"></span>
-      <button id="btn-signout" class="secondary hidden">Sign out</button>
-    </div>
+    <button data-route="sales">Sales</button>
+    <button data-route="admin" class="hidden">Admin</button>
+    <span id="whoami"></span>
+    <button id="btn-signin">Sign in</button>
+    <button id="btn-signout" class="hidden">Sign out</button>
   </nav>
 
-  <!-- Global status bar -->
-  <div id="statusbar">
-    <span id="status"></span>
+  <!-- Status messages -->
+  <div id="status"></div>
+
+  <!-- Pages -->
+  <div id="page-home" class="page">
+    <h1>Communications Hub</h1>
+    <p>Welcome to Skye Bridge internal operations platform. Use the navigation above to access modules.</p>
   </div>
 
-  <!-- Logged-out view -->
-  <main id="logged-out">
-    <section class="auth-card">
-      <h1>Skye Bridge Internal Tools</h1>
-      <p class="muted">
-        Please sign in with your Skye Bridge email and password to access the platform.
+  <div id="page-sales" class="page hidden">
+    <h1>Sales &amp; Forecasting</h1>
+    <!-- store and month selection -->
+    <div class="toolbar">
+      <label for="storeSelect">Store:</label>
+      <select id="storeSelect"></select>
+      <label for="monthInput">Month:</label>
+      <input type="month" id="monthInput">
+      <button id="btn-load" class="pill">Load</button>
+    </div>
+
+    <!-- summary metrics -->
+    <div id="summary" class="summary-bar">
+      <!-- populated dynamically -->
+    </div>
+
+    <!-- DOW toolbar -->
+    <div id="dow-toolbar" class="dow-toolbar">
+      <div class="dow-header-row">
+        <h2>Day-of-Week Mix</h2>
+        <div class="dow-actions">
+          <button id="btn-suggest-dow" class="pill small">Suggest from history</button>
+          <button id="btn-reset-dow" class="pill small">Reset to equal &amp; apply</button>
+          <button id="btn-apply-dow" class="pill small primary">Apply to daily goals</button>
+        </div>
+      </div>
+      <p class="dow-subtitle">
+        Use these weights to shape how monthly goals are split across the month. Higher numbers give that day a larger share.
       </p>
-
-      <label for="email">Email</label>
-      <input id="email" type="email" autocomplete="email" placeholder="you@company.com" />
-
-      <label for="password">Password</label>
-      <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
-
-      <div class="auth-actions">
-        <button id="btn-signin">Sign in</button>
-        <button id="btn-forgot" type="button" class="link-button">Forgot password?</button>
+      <div id="dow-weights-row" class="dow-weights-row">
+        <!-- DOW cells generated in JS -->
       </div>
+      <div id="dow-status" class="microstatus"></div>
+    </div>
 
-      <div id="auth-message" class="muted small"></div>
-    </section>
-  </main>
+    <!-- calendar grid -->
+    <div id="calendar" class="calendar"></div>
+  </div>
 
-  <!-- Password reset view -->
-  <main id="password-reset" class="hidden">
-    <section class="auth-card">
-      <h1>Reset your password</h1>
-      <p class="muted">
-        Enter and confirm your new password below.
-      </p>
+  <div id="page-admin" class="page hidden">
+    <h1>Admin Home</h1>
+    <div class="admin-cards">
+      <div class="card" data-admin="goals">Goals Admin</div>
+      <div class="card" data-admin="employees">Employee Management</div>
+      <div class="card" data-admin="import">Data Import Tools</div>
+    </div>
+    <!-- Placeholder for admin subpages -->
+    <div id="admin-subpage"></div>
+  </div>
 
-      <label for="newPassword">New password</label>
-      <input id="newPassword" type="password" autocomplete="new-password" />
-
-      <label for="confirmPassword">Confirm new password</label>
-      <input id="confirmPassword" type="password" autocomplete="new-password" />
-
-      <button id="btn-set-password">Set new password</button>
-      <div id="reset-message" class="muted small"></div>
-    </section>
-  </main>
-
-  <!-- Authenticated app pages -->
-  <main id="app-root">
-
-    <!-- HOME PAGE -->
-    <section id="page-home" class="page hidden">
-      <header class="page-header">
-        <div>
-          <h2>Communications Hub</h2>
-          <p class="muted">
-            Welcome to Skye Bridge internal operations platform. Use the navigation above to access modules.
-          </p>
-        </div>
-        <div>
-          <button id="btn-add-post" class="primary">New Post</button>
-        </div>
-      </header>
-
-      <section class="feed">
-        <!-- New posts are injected here by app.js -->
-        <div class="post-card muted">
-          <h4>Welcome</h4>
-          <p>
-            This is your internal home feed. Use it for quick updates, reminders, and links to key tools.
-          </p>
-        </div>
-      </section>
-
-      <!-- Post modal -->
-      <div id="postModal" class="modal hidden">
-        <div class="modal-content">
-          <header class="modal-header">
-            <h3>New Post</h3>
-            <button id="btnClosePost" class="icon-button" type="button">&times;</button>
-          </header>
-          <div class="modal-body">
-            <label for="post-title">Title</label>
-            <input id="post-title" type="text" />
-
-            <label for="post-body">Body</label>
-            <textarea id="post-body" rows="4"></textarea>
-
-            <label for="post-file">Attach file (optional)</label>
-            <input id="post-file" type="file" />
-          </div>
-          <footer class="modal-footer">
-            <button id="btnPostCancel" type="button" class="secondary">Cancel</button>
-            <button id="btnPostSave" type="button">Post</button>
-          </footer>
-        </div>
+  <!-- Day details modal -->
+  <div id="dayModal" class="modal hidden">
+    <div class="modal-content">
+      <h2 id="modalTitle"></h2>
+      <div id="modal-body">
+        <!-- KPI cards inserted here -->
       </div>
-    </section>
-
-    <!-- SALES PAGE -->
-    <section id="page-sales" class="page hidden">
-      <header class="page-header">
-        <div>
-          <h2>Sales Goals &amp; Current Results</h2>
-          <p class="muted">
-            Select a store and month to view daily goals, actual results, and pace.
-          </p>
-        </div>
-        <div class="filters">
-          <label>
-            Store
-            <select id="storeSelect"></select>
-          </label>
-          <label>
-            Month
-            <input id="monthInput" type="month" />
-          </label>
-          <button id="btn-load">Load</button>
-        </div>
-      </header>
-
-      <!-- DOW toolbar -->
-      <section id="dow-toolbar" class="card hidden">
-        <header class="toolbar-header">
-          <h3>Day-of-Week Mix</h3>
-          <p class="muted small">
-            Adjust weights by day-of-week to break the monthly goal into daily targets.
-          </p>
-        </header>
-        <div id="dow-weights-row" class="dow-grid"><!-- Populated by JS --></div>
-        <footer class="toolbar-footer">
-          <button id="btn-apply-dow" class="primary">Apply to daily goals</button>
-          <button id="btn-reset-dow" class="secondary">Reset to equal &amp; apply</button>
-          <button id="btn-suggest-dow" class="secondary">Suggest from history</button>
-          <span id="dow-status" class="muted small"></span>
-        </footer>
-      </section>
-
-      <section class="summary-row">
-        <div id="summary" class="summary-pill">
-          <!-- Summary text populated by JS -->
-        </div>
-      </section>
-
-      <section class="calendar-wrapper">
-        <div id="calendar" class="calendar-grid">
-          <!-- Days injected by JS -->
-        </div>
-      </section>
-
-      <!-- Day details modal -->
-      <div id="dayModal" class="modal hidden">
-        <div class="modal-content wide">
-          <header class="modal-header">
-            <h3 id="modalTitle">Day details</h3>
-            <button id="btnCloseModal" class="icon-button" type="button">&times;</button>
-          </header>
-          <div class="modal-body">
-            <section id="modalKpis" class="kpi-grid">
-              <!-- KPI controls populated by JS -->
-            </section>
-          </div>
-          <footer class="modal-footer split">
-            <button id="btn-clear-all" class="secondary danger" type="button">
-              Clear all actuals for this day
-            </button>
-            <div>
-              <button id="btnSaveModal" type="button">Save</button>
-            </div>
-          </footer>
-        </div>
+      <div class="modal-actions">
+        <button id="btnSaveModal" class="pill">Save</button>
+        <button id="btn-clear-all" class="pill">Clear Actuals</button>
+        <button id="btnCloseModal" class="pill">Close</button>
       </div>
-    </section>
+    </div>
+  </div>
 
-    <!-- P&L PAGE (placeholder) -->
-    <section id="page-pl" class="page hidden">
-      <header class="page-header">
-        <h2>P&amp;L Analysis</h2>
-        <p class="muted">Placeholder – to be wired up later.</p>
-      </header>
-    </section>
-
-    <!-- DEPT WALK PAGE (placeholder) -->
-    <section id="page-deptwalk" class="page hidden">
-      <header class="page-header">
-        <h2>Dept Walks</h2>
-        <p class="muted">Placeholder for Dept Walk tools.</p>
-      </header>
-    </section>
-
-    <!-- DEPT WALK RESULTS PAGE (placeholder) -->
-    <section id="page-deptwalk-results" class="page hidden">
-      <header class="page-header">
-        <h2>Dept Walk Results &amp; Tasks</h2>
-        <p class="muted">Placeholder for results and task management views.</p>
-      </header>
-    </section>
-
-    <!-- B2B PAGE (placeholder) -->
-    <section id="page-b2b" class="page hidden">
-      <header class="page-header">
-        <h2>B2B CRM</h2>
-        <p class="muted">Placeholder for B2B customer management.</p>
-      </header>
-    </section>
-
-    <!-- EIR PAGE (placeholder) -->
-    <section id="page-eir" class="page hidden">
-      <header class="page-header">
-        <h2>Employee Incident Reports</h2>
-        <p class="muted">Placeholder for EIR tooling.</p>
-      </header>
-    </section>
-
-    <!-- POP / LIBRARY PAGE (placeholder) -->
-    <section id="page-pop" class="page hidden">
-      <header class="page-header">
-        <h2>POP Library &amp; Tools</h2>
-        <p class="muted">Placeholder for POP resources and templates.</p>
-      </header>
-    </section>
-
-    <!-- ADMIN PAGE -->
-    <section id="page-admin" class="page hidden">
-      <header class="page-header">
-        <h2>Admin Hub</h2>
-        <p class="muted">
-          Manage users, store access, tab access, and monthly goals.
-        </p>
-      </header>
-
-      <div class="admin-grid">
-        <!-- Users & roles -->
-        <section class="card">
-          <header class="card-header">
-            <h3>Users &amp; Admin Roles</h3>
-            <div class="row">
-              <input id="admin-user-search" type="text" placeholder="Filter by email" />
-              <button id="btn-refresh-users" class="secondary">Refresh</button>
-            </div>
-          </header>
-          <div class="card-body">
-            <table id="tbl-users" class="table">
-              <thead>
-                <tr>
-                  <th>Email</th>
-                  <th>Admin</th>
-                  <th>User ID</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- Store access -->
-        <section class="card">
-          <header class="card-header">
-            <h3>Store Access</h3>
-          </header>
-          <div class="card-body">
-            <div class="row">
-              <label>
-                User
-                <select id="sa-userSelect"></select>
-              </label>
-              <label>
-                Store
-                <select id="sa-storeSelect"></select>
-              </label>
-              <button id="btn-add-access">Grant Access</button>
-            </div>
-
-            <table id="tbl-access" class="table">
-              <thead>
-                <tr>
-                  <th>Store</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- Tab access -->
-        <section class="card">
-          <header class="card-header">
-            <h3>Tab Access</h3>
-          </header>
-          <div class="card-body">
-            <label>
-              User
-              <select id="ta-userSelect"></select>
-            </label>
-            <table id="tbl-tab-access" class="table">
-              <thead>
-                <tr>
-                  <th>Tab</th>
-                  <th>Has Access</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- Monthly goals -->
-        <section class="card">
-          <header class="card-header">
-            <h3>Monthly Goals</h3>
-          </header>
-          <div class="card-body">
-            <div class="row">
-              <label>
-                Store
-                <select id="mg-storeSelect"></select>
-              </label>
-              <label>
-                Month
-                <input id="mg-monthInput" type="month" />
-              </label>
-              <button id="btn-load-goals" class="secondary">Load</button>
-            </div>
-
-            <div class="row">
-              <label>
-                Sales Goal
-                <input id="mg-sales" type="number" step="0.01" />
-              </label>
-              <label>
-                Transaction Goal
-                <input id="mg-txn" type="number" step="1" />
-              </label>
-              <label>
-                ATV Goal
-                <input id="mg-atv" type="number" step="0.01" />
-              </label>
-            </div>
-
-            <div class="row">
-              <button id="btn-save-goals">Save Goals</button>
-              <button id="btn-suggest-goals" class="secondary">
-                Suggest from last year
-              </button>
-              <span id="mg-status" class="muted small"></span>
-            </div>
-
-            <div id="goal-suggestions" class="suggestions-grid hidden">
-              <!-- Suggestion cards injected by JS -->
-            </div>
-          </div>
-        </section>
-      </div>
-    </section>
-  </main>
-
-  <!-- App config (public) -->
-  <script>
-    window.APP_CONFIG = {
-      SUPABASE_URL: "https://bvyrxqfffaxthrjfxjue.supabase.co",
-      SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM"
-    };
-  </script>
-
-  <!-- Main app script -->
   <script src="app.js"></script>
 </body>
 </html>
