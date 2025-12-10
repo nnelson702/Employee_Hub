@@ -1,341 +1,285 @@
-/* Basic layout and typography */
+:root{
 
-body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  margin: 0;
-  background: #020617;
-  color: #e5e7eb;
+--ace-red:#E31837;
+
+--ok:#119f4a;
+
+--bad:#cc2b2b;
+
+--muted:#777;
+
+--chip:#eef2f7;
+
+--bg:#fafbfc;
+
+--border:#e3e6ea;
+
 }
 
-h1, h2, h3 {
-  margin: 0.5rem 0;
+*{box-sizing:border-box}
+
+body{margin:0;background:var(--bg);font:14px/1.45
+system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111}
+
+.appbar{display:flex;justify-content:space-between;align-items:center;padding:14px
+16px;border-bottom:1px solid var(--border)}
+
+.appbar h1{margin:0;font-size:20px}
+
+.authbox{display:flex;gap:8px;align-items:center}
+
+.authbox #whoami{color:#444}
+
+/* Navigation bar styled for a more corporate look */
+
+.nav{display:flex;gap:8px;padding:12px 20px;border-bottom:1px solid
+var(--border);background:#fff;position:sticky;top:0;z-index:2;box-shadow:0
+1px 2px rgba(0,0,0,0.05);}
+
+.nav button{padding:8px 12px;border:1px solid
+var(--border);background:#fff;border-radius:10px;cursor:pointer;font-weight:500;transition:background
+0.2s,border-color 0.2s;}
+
+.nav button:hover{background:#f5f7fa;}
+
+.nav
+button.active{border-color:var(--ace-red);font-weight:600;background:#fff5f5;color:var(--ace-red);}
+
+.hidden{display:none !important}
+
+.status{margin:12px 16px;padding:10px 12px;border:1px solid
+var(--border);border-radius:10px;background:#f7f8fb;color:#333}
+
+.container{padding:16px}
+
+.controls{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;align-items:end}
+
+.controls label{display:flex;flex-direction:column;gap:4px}
+
+.controls input,.controls select{padding:8px;border:1px solid
+var(--border);border-radius:8px}
+
+input,textarea,select{background:#fff;border:1px solid
+var(--border);border-radius:8px;font-family:inherit;}
+
+/* Cards headings spacing */
+
+.card h3{margin-top:0;margin-bottom:8px;}
+
+label{font-size:13px;font-weight:500;color:#333;}
+
+button{padding:10px 12px;border:1px solid
+var(--border);border-radius:10px;background:#fff;cursor:pointer}
+
+button.primary,#btn-load,#btn-save-goals,#btn-add-access{background:var(--ace-red);border-color:var(--ace-red);color:#fff}
+
+button.secondary{background:#fff}
+
+button.small{padding:6px 8px}
+
+.summary{margin:12px 0;padding:10px;border:1px solid
+var(--border);border-radius:10px;background:#f8f9fb}
+
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:14px}
+
+.calendar .day{border:1px solid
+var(--border);border-radius:16px;padding:12px;min-height:140px;background:#fff;position:relative}
+
+.calendar .day .details{position:absolute;top:8px;right:8px}
+
+.day.future{background:#fff}
+
+.day.past.goal-hit{background:#eaffef}
+
+.day.past.goal-miss{background:#ffecec}
+
+.day .num{font-weight:700;margin-bottom:4px}
+
+.day .row{display:flex;align-items:center;gap:8px}
+
+.day .sales{font-weight:800}
+
+.day .italic{font-style:italic}
+
+.day .pct{font-weight:800}
+
+.ok{color:var(--ok)} .bad{color:var(--bad)} .muted{color:#999}
+
+.modal{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:flex-start;justify-content:center;padding:40px
+16px}
+
+.modal
+.sheet{width:min(1100px,96vw);background:#fff;border-radius:14px;padding:16px;border:1px
+solid var(--border)}
+
+.modal
+header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+
+.badge{padding:6px
+10px;border-radius:999px;background:var(--chip);border:1px solid
+var(--border);font-size:12px}
+
+.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:12px}
+
+.microstatus{color:#555;margin-top:8px}
+
+.card{border:1px solid
+var(--border);border-radius:12px;padding:14px;background:#fff;box-shadow:0
+1px 3px rgba(0,0,0,0.05);}
+
+.admin-grid{display:grid;grid-template-columns:1fr;gap:16px}
+
+@media (min-width:1000px){.admin-grid{grid-template-columns:1fr 1fr}}
+
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+.table{width:100%;border-collapse:collapse;margin-top:8px}
+
+.table th,.table td{border-bottom:1px solid var(--border);padding:8px}
+
+.table td .pill{display:inline-block;padding:4px 8px;border:1px solid
+var(--border);border-radius:999px;background:#fff}
+
+/* Auth area + forgot password */
+
+#auth-area{display:flex;flex-direction:column;gap:8px;align-items:flex-start;max-width:320px;}
+
+#auth-area input{padding:10px;border:1px solid
+var(--border);border-radius:10px;width:100%;}
+
+.auth-actions{display:flex;gap:8px;align-items:center;margin-top:4px;}
+
+.link-button{background:none;border:none;padding:0;color:var(--ace-red);cursor:pointer;font-size:13px;text-decoration:underline;}
+
+.link-button:hover{color:#b11229;}
+
+.auth-message{margin-top:4px;font-size:13px;color:#555;}
+
+/* Month layout + DOW weights */
+
+.month-layout{display:flex;flex-direction:column;gap:8px;}
+
+.dow-toolbar{display:flex;flex-direction:column;gap:6px;}
+
+.dow-weights{display:grid;grid-template-columns:repeat(7,1fr);gap:14px;}
+
+.dow-cell{border-radius:14px;padding:6px
+8px;background:var(--bg);border:1px solid
+var(--border);display:flex;flex-direction:column;gap:4px;}
+
+.dow-header{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:600;}
+
+.dow-name{letter-spacing:0.03em;}
+
+.dow-current{font-size:11px;color:var(--muted);}
+
+.dow-input-row{display:flex;align-items:center;gap:4px;}
+
+.dow-weight-input{width:70px;padding:4px
+6px;border-radius:6px;border:1px solid
+#ddd;background:#fafafa;font-size:12px;}
+
+.dow-weight-input:disabled{background:transparent;border-color:transparent;cursor:default;}
+
+.dow-unit{font-size:11px;color:var(--muted);}
+
+.dow-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+
+/* Goal suggestions styling */
+
+.goal-suggestions{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;}
+
+.suggestion-card{border:1px solid
+var(--border);background:#fff;border-radius:10px;padding:8px;min-width:150px;cursor:pointer;text-align:left;}
+
+.suggestion-card.selected{border-color:var(--ace-red);background:#fff5f8;}
+
+.suggestion-card h4{margin:0 0 4px 0;font-size:13px;color:#333;}
+
+.suggestion-card .value{font-weight:700;}
+
+/* Mobile tweaks */
+
+@media (max-width:768px){
+
+.calendar{gap:8px;}
+
+.calendar .day{min-height:120px;padding:8px;}
+
+.dow-weights{gap:8px;}
+
+.dow-cell{padding:4px 6px;}
+
+.dow-weight-input{width:100%;font-size:11px;}
+
+.dow-header{font-size:10px;}
+
 }
 
-#status {
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
-}
+/* ----- Home / Communications Hub ----- */
 
-/* Top navigation bar */
+.feed{display:flex;flex-direction:column;gap:12px;margin-top:12px;}
 
-#topNav {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: #0f172a;
-  border-bottom: 1px solid #1f2937;
-}
+.post-card{border:1px solid
+var(--border);background:#fff;border-radius:12px;padding:12px;box-shadow:0
+1px 2px rgba(0,0,0,0.05);}
 
-#topNav button {
-  border: none;
-  background: #111827;
-  color: #e5e7eb;
-  padding: 0.3rem 0.75rem;
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
+.post-card.pinned{border-color:var(--ace-red);background:#fff5f6;}
 
-#topNav button.active {
-  background: #f97316;
-  color: #111827;
-  font-weight: 600;
-}
+.post-card h4{margin:0 0 6px 0;font-size:16px;}
 
-#whoami {
-  margin-left: auto;
-  font-size: 0.8rem;
-  color: #9ca3af;
-}
+.post-header{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
 
-/* Page containers */
+.post-footer{display:flex;gap:8px;margin-top:8px;}
 
-.page {
-  padding: 1rem;
-}
+/* Attachment label inside posts */
 
-.page.hidden {
-  display: none;
-}
+.attachment{margin-top:4px;font-size:12px;color:#555;}
 
-/* Toolbar for Sales page */
+/* ----- P&L analysis grid ----- */
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.75rem 0;
-}
+.pl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:12px;}
 
-.toolbar label {
-  font-size: 0.85rem;
-}
+/* ----- Dept Walk Results grid ----- */
 
-/* Summary bar */
+.results-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:12px;}
 
-.summary-bar {
-  background: #111827;
-  border-radius: 999px;
-  padding: 0.4rem 0.75rem;
-  font-size: 0.85rem;
-  border: 1px solid #374151;
-  margin-bottom: 0.5rem;
-}
+.gallery{display:flex;gap:8px;flex-wrap:wrap;}
 
-/* Calendar styling */
+.thumbnail{width:80px;height:80px;border:1px solid
+var(--border);border-radius:8px;background:var(--bg);}
 
-.calendar {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 0.3rem;
-  margin-top: 0.5rem;
-}
+.notes-list{list-style-type:none;padding:0;margin:0;}
 
-.day {
-  min-height: 80px;
-  background: #020617;
-  border-radius: 8px;
-  padding: 0.35rem;
-  border: 1px solid #1f2937;
-  font-size: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
+.notes-list li{margin-bottom:6px;}
 
-.day .num {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: 600;
-  color: #9ca3af;
-  margin-bottom: 0.2rem;
-}
+Files for the current department walk tool we have running through
+google app script I’d like replicate this tool in the platform we are
+building which I expect to improve the performance of the walk tool
+drastically.
 
-.day .sales {
-  font-size: 0.8rem;
-  font-weight: 600;
-}
+index.html
 
-.day .row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.7rem;
-  margin-top: 0.15rem;
-}
+<!DOCTYPE html>
 
-.day .bold {
-  font-weight: 600;
-}
+<html>
 
-.day .muted {
-  color: #9ca3af;
-}
+<head>
 
-.day .pct {
-  text-align: right;
-  font-size: 0.7rem;
-  margin-top: 0.15rem;
-}
+  <meta charset="UTF-8">
 
-.day .pct.ok {
-  color: #22c55e;
-}
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
-.day .pct.bad {
-  color: #f97373;
-}
+  <base target="_top">
 
-.day.future {
-  opacity: 0.95;
-}
+  <style>
 
-.day.past {
-  opacity: 0.9;
-}
+    html { font-size:18px; }
 
-.day.goal-hit {
-  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.7);
-}
+    body {
 
-.day.goal-miss {
-  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.7);
-}
+      margin:0; padding:0;
 
-/* Pills and buttons */
+      font-family:Arial,sans-serif;
 
-.pill {
-  border-radius: 999px;
-  border: none;
-  padding: 0.25rem 0.75rem;
-  font-size: 0.75rem;
-  cursor: pointer;
-  background: #111827;
-  color: #e5e7eb;
-}
-
-.pill.primary {
-  background: #f97316;
-  color: #111827;
-  font-weight: 600;
-}
-
-.pill.small {
-  padding: 0.2rem 0.6rem;
-  font-size: 0.7rem;
-}
-
-/* DOW toolbar */
-
-.dow-toolbar {
-  margin: 0.75rem 0;
-  padding: 0.6rem 0.75rem;
-  background: #020617;
-  border-radius: 8px;
-  border: 1px solid #1f2937;
-}
-
-.dow-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.25rem;
-}
-
-.dow-subtitle {
-  font-size: 0.75rem;
-  color: #9ca3af;
-  margin: 0.25rem 0 0.5rem;
-}
-
-.dow-actions {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.dow-weights-row {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 0.35rem;
-}
-
-.dow-cell {
-  background: #020617;
-  border-radius: 6px;
-  border: 1px solid #1f2937;
-  padding: 0.25rem 0.3rem;
-  font-size: 0.7rem;
-}
-
-.dow-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.dow-name {
-  font-weight: 600;
-  font-size: 0.7rem;
-}
-
-.dow-current {
-  font-size: 0.65rem;
-  color: #fbbf24;
-}
-
-.dow-input-row {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.2rem;
-}
-
-.dow-input-row input[type="number"] {
-  width: 3rem;
-  font-size: 0.7rem;
-}
-
-.dow-unit {
-  font-size: 0.65rem;
-  color: #9ca3af;
-}
-
-.microstatus {
-  margin-top: 0.25rem;
-  font-size: 0.7rem;
-  color: #9ca3af;
-}
-
-/* Admin cards */
-
-.admin-cards {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.card {
-  background: #020617;
-  border-radius: 8px;
-  border: 1px solid #1f2937;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-/* Modal */
-
-.modal {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(15, 23, 42, 0.7);
-  z-index: 50;
-}
-
-.modal.hidden {
-  display: none;
-}
-
-.modal-content {
-  background: #020617;
-  border-radius: 8px;
-  border: 1px solid #1f2937;
-  padding: 0.75rem 1rem;
-  min-width: 260px;
-  max-width: 420px;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-/* Forms */
-
-input, select {
-  background: #020617;
-  color: #e5e7eb;
-  border-radius: 6px;
-  border: 1px solid #374151;
-  padding: 0.25rem 0.4rem;
-  font-size: 0.8rem;
-}
-
-input:focus, select:focus {
-  outline: none;
-  border-color: #f97316;
-  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.7);
-}
-
-/* Utility */
-
-.hidden {
-  display: none !important;
-}
+      font-size:1rem; line-height:1.5;
