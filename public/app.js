@@ -1,7 +1,7 @@
 // === CONFIG ===
 // TODO: replace with your actual Supabase URL and anon key.
-const SUPABASE_URL = "https://bvyrxqfffaxthrjfxjue.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM";
+const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+const SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE";
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -40,12 +40,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // === AUTH ===
 async function initAuth() {
-  // check existing session
   const { data } = await supabase.auth.getSession();
   session = data.session || null;
   updateAuthUI();
 
-  // subscribe
   supabase.auth.onAuthStateChange((_event, sess) => {
     session = sess;
     updateAuthUI();
@@ -190,8 +188,8 @@ function setStatus(msg) {
 // Uses your actual schema: table "stores" with columns "id" and "name"
 async function populateStores() {
   const STORE_TABLE = "stores";
-  const STORE_ID_COL = "id";   // 18228 / 18507 / 18690 / 19117
-  const STORE_NAME_COL = "name"; // Tropicana / Horizon Ridge / ...
+  const STORE_ID_COL = "id";
+  const STORE_NAME_COL = "name";
 
   const { data, error } = await supabase
     .from(STORE_TABLE)
@@ -481,9 +479,9 @@ async function saveDayActualsFromModal() {
     atv_actual: aAct,
   };
 
-  const { error } = await supabase.from("forecast_daily").upsert(payload, {
-    onConflict: "store_id,date",
-  });
+  // delete existing row for that store/date, then insert
+  await supabase.from("forecast_daily").delete().eq("store_id", currentStoreId).eq("date", modalDate);
+  const { error } = await supabase.from("forecast_daily").insert(payload);
 
   if (error) {
     setStatus(`Error saving actuals: ${error.message}`);
@@ -712,9 +710,30 @@ async function applyDowWeightsToMonth() {
 
   $("#dow-status").textContent = "Saving daily goals…";
 
-  const { error } = await supabase.from("forecast_daily").upsert(payload, {
-    onConflict: "store_id,date",
-  });
+  // delete existing rows for this store + month, then insert new rows
+  const [yearStr, monthStr] = monthVal.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const firstDay = `${yearStr}-${monthStr}-01`;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonthStr = String(nextMonth).padStart(2, "0");
+  const firstOfNext = `${nextYear}-${nextMonthStr}-01`;
+
+  const { error: delErr } = await supabase
+    .from("forecast_daily")
+    .delete()
+    .eq("store_id", storeId)
+    .gte("date", firstDay)
+    .lt("date", firstOfNext);
+
+  if (delErr) {
+    console.error("Error deleting existing daily goals", delErr);
+    $("#dow-status").textContent = `Error clearing old daily goals: ${delErr.message}`;
+    return;
+  }
+
+  const { error } = await supabase.from("forecast_daily").insert(payload);
 
   if (error) {
     console.error("Error saving daily goals from DOW weights", error);
@@ -844,9 +863,9 @@ function wireAdminPage() {
       txn_goal: tGoal,
     };
 
-    const { error } = await supabase.from("monthly_goals").upsert(payload, {
-      onConflict: "store_id,month",
-    });
+    // delete existing row for that store/month then insert
+    await supabase.from("monthly_goals").delete().eq("store_id", storeId).eq("month", monthVal);
+    const { error } = await supabase.from("monthly_goals").insert(payload);
 
     if (error) {
       $("#admin-goals-status").textContent = `Error saving goals: ${error.message}`;
