@@ -451,49 +451,127 @@ function openDayModal(dateStr, row) {
 
   const aSales = Number(row.sales_actual || 0);
   const aTxn = Number(row.txn_actual || 0);
-  const aAtv = Number(row.atv_actual || 0);
+  const aAtv =
+    aTxn > 0 ? Number((aSales / aTxn).toFixed(2)) : Number(row.atv_actual || 0);
 
   container.innerHTML = `
-    <div class="field">
-      <label>Sales Goal</label>
-      <div id="modal-prior-sales" style="text-align:right;font-size:0.8rem;opacity:0.75;">Last year: –</div>
-      ${
-        isAdmin
-          ? `<input type="number" id="modal-sales-goal" value="${gSales || ""}" step="0.01" />`
-          : `<div>${fmtMoney(gSales)}</div>`
-      }
-    </div>
-    <div class="field">
-      <label>Sales Actual</label>
-      <input type="number" id="modal-sales-actual" value="${aSales || ""}" step="0.01" />
-    </div>
-    <div class="field">
-      <label>Txn Goal</label>
-      <div id="modal-prior-txn" style="text-align:right;font-size:0.8rem;opacity:0.75;">Last year: –</div>
-      ${
-        isAdmin
-          ? `<input type="number" id="modal-txn-goal" value="${gTxn || ""}" step="1" />`
-          : `<div>${fmtInt(gTxn)}</div>`
-      }
-    </div>
-    <div class="field">
-      <label>Txn Actual</label>
-      <input type="number" id="modal-txn-actual" value="${aTxn || ""}" step="1" />
-    </div>
-    <div class="field">
-      <label>ATV Goal</label>
-      <div id="modal-prior-atv" style="text-align:right;font-size:0.8rem;opacity:0.75;">Last year: –</div>
-      <div>${fmtMoney(gAtv)}</div>
-    </div>
-    <div class="field">
-      <label>ATV Actual</label>
-      <input type="number" id="modal-atv-actual" value="${aAtv || ""}" step="0.01" />
+    <div class="day-modal-grid">
+      <div class="day-modal-col">
+        <h4 class="day-modal-heading">This year</h4>
+
+        <div class="field">
+          <label for="ty-sales-goal">Sales Goal</label>
+          ${
+            isAdmin
+              ? `<input type="number" id="ty-sales-goal" value="${gSales || ""}" step="0.01" />`
+              : `<div class="field-readonly">${fmtMoney(gSales)}</div>`
+          }
+        </div>
+
+        <div class="field">
+          <label for="ty-sales-actual">Sales Actual</label>
+          <input type="number" id="ty-sales-actual" value="${aSales || ""}" step="0.01" />
+        </div>
+
+        <div class="field">
+          <label for="ty-txn-goal">Txn Goal</label>
+          ${
+            isAdmin
+              ? `<input type="number" id="ty-txn-goal" value="${aTxn ? gTxn : gTxn || ""}" step="1" />`
+              : `<div class="field-readonly">${fmtInt(gTxn)}</div>`
+          }
+        </div>
+
+        <div class="field">
+          <label for="ty-txn-actual">Txn Actual</label>
+          <input type="number" id="ty-txn-actual" value="${aTxn || ""}" step="1" />
+        </div>
+
+        <div class="field">
+          <label for="ty-atv-goal">ATV Goal</label>
+          <input type="number" id="ty-atv-goal" value="${gAtv || ""}" step="0.01" readonly />
+        </div>
+
+        <div class="field">
+          <label for="ty-atv-actual">ATV Actual</label>
+          <input type="number" id="ty-atv-actual" value="${aAtv || ""}" step="0.01" readonly />
+        </div>
+      </div>
+
+      <div class="day-modal-col">
+        <h4 class="day-modal-heading">Last year</h4>
+
+        <div class="field">
+          <label>Sales Goal</label>
+          <div id="ly-sales-goal" class="field-readonly">–</div>
+        </div>
+
+        <div class="field">
+          <label>Sales Actual</label>
+          <div id="ly-sales-actual" class="field-readonly">–</div>
+        </div>
+
+        <div class="field">
+          <label>Txn Goal</label>
+          <div id="ly-txn-goal" class="field-readonly">–</div>
+        </div>
+
+        <div class="field">
+          <label>Txn Actual</label>
+          <div id="ly-txn-actual" class="field-readonly">–</div>
+        </div>
+
+        <div class="field">
+          <label>ATV Goal</label>
+          <div id="ly-atv-goal" class="field-readonly">–</div>
+        </div>
+
+        <div class="field">
+          <label>ATV Actual</label>
+          <div id="ly-atv-actual" class="field-readonly">–</div>
+        </div>
+      </div>
     </div>
   `;
 
+  const salesGoalInput = $("#ty-sales-goal");
+  const txnGoalInput = $("#ty-txn-goal");
+  const atvGoalInput = $("#ty-atv-goal");
+  const salesActInput = $("#ty-sales-actual");
+  const txnActInput = $("#ty-txn-actual");
+  const atvActInput = $("#ty-atv-actual");
+
+  function recalcAtvGoal() {
+    const s = Number(salesGoalInput?.value || 0);
+    const t = Number(txnGoalInput?.value || 0);
+    if (t > 0) {
+      atvGoalInput.value = (s / t).toFixed(2);
+    } else {
+      atvGoalInput.value = "";
+    }
+  }
+
+  function recalcAtvActual() {
+    const s = Number(salesActInput?.value || 0);
+    const t = Number(txnActInput?.value || 0);
+    if (t > 0) {
+      atvActInput.value = (s / t).toFixed(2);
+    } else {
+      atvActInput.value = "";
+    }
+  }
+
+  if (salesGoalInput && txnGoalInput && atvGoalInput) {
+    salesGoalInput.addEventListener("input", recalcAtvGoal);
+    txnGoalInput.addEventListener("input", recalcAtvGoal);
+  }
+  if (salesActInput && txnActInput && atvActInput) {
+    salesActInput.addEventListener("input", recalcAtvActual);
+    txnActInput.addEventListener("input", recalcAtvActual);
+  }
+
   $("#dayModal").classList.remove("hidden");
 
-  // asynchronous load of prior-year values
   loadPriorYearForDay(dateStr);
 }
 
@@ -507,25 +585,46 @@ async function loadPriorYearForDay(dateStr) {
       "0"
     )}-${String(dt.getDate()).padStart(2, "0")}`;
 
-    const { data, error } = await supabase
+    const { data: lyForecast, error: lyFErr } = await supabase
+      .from("forecast_daily")
+      .select("sales_goal, txn_goal, atv_goal, sales_actual, txn_actual, atv_actual")
+      .eq("store_id", currentStoreId)
+      .eq("date", priorDateStr)
+      .maybeSingle();
+
+    if (!lyFErr && lyForecast) {
+      if ($("#ly-sales-goal")) $("#ly-sales-goal").textContent = fmtMoney(lyForecast.sales_goal);
+      if ($("#ly-txn-goal")) $("#ly-txn-goal").textContent = fmtInt(lyForecast.txn_goal);
+      if ($("#ly-atv-goal"))
+        $("#ly-atv-goal").textContent =
+          lyForecast.atv_goal != null ? fmtMoney(lyForecast.atv_goal) : "–";
+
+      if ($("#ly-sales-actual"))
+        $("#ly-sales-actual").textContent = fmtMoney(lyForecast.sales_actual);
+      if ($("#ly-txn-actual"))
+        $("#ly-txn-actual").textContent = fmtInt(lyForecast.txn_actual);
+
+      const lyAtvActual =
+        lyForecast.atv_actual != null && lyForecast.txn_actual
+          ? lyForecast.atv_actual
+          : lyForecast.sales_actual && lyForecast.txn_actual
+          ? lyForecast.sales_actual / lyForecast.txn_actual
+          : null;
+      if ($("#ly-atv-actual"))
+        $("#ly-atv-actual").textContent =
+          lyAtvActual != null ? fmtMoney(lyAtvActual) : "–";
+    }
+
+    const { data: hist, error: histErr } = await supabase
       .from("historical_sales")
       .select("date, net_sales")
       .eq("store_id", currentStoreId)
       .eq("date", priorDateStr)
       .maybeSingle();
 
-    if (error || !data) return;
-
-    const sales = Number(data.net_sales || 0);
-
-    const salesSpan = $("#modal-prior-sales");
-    if (salesSpan) salesSpan.textContent = `Last year: ${fmtMoney(sales)}`;
-
-    // Txn & ATV placeholders; fill when those metrics exist in historical data
-    const txnSpan = $("#modal-prior-txn");
-    if (txnSpan) txnSpan.textContent = "Last year: –";
-    const atvSpan = $("#modal-prior-atv");
-    if (atvSpan) atvSpan.textContent = "Last year: –";
+    if (!histErr && hist && $("#ly-sales-actual")) {
+      $("#ly-sales-actual").textContent = fmtMoney(hist.net_sales);
+    }
   } catch (e) {
     console.error("Error loading prior-year daily values", e);
   }
@@ -535,13 +634,12 @@ async function saveDayActualsFromModal() {
   if (!modalDate || !currentStoreId) return;
   const isAdmin = !!(profile && profile.is_admin);
 
-  // GOALS (admin can edit)
   let gSales = Number(modalRow.sales_goal || 0);
   let gTxn = Number(modalRow.txn_goal || 0);
 
   if (isAdmin) {
-    gSales = Number($("#modal-sales-goal")?.value || 0) || 0;
-    gTxn = Number($("#modal-txn-goal")?.value || 0) || 0;
+    gSales = Number($("#ty-sales-goal")?.value || 0) || 0;
+    gTxn = Number($("#ty-txn-goal")?.value || 0) || 0;
   }
 
   let gAtv = 0;
@@ -549,17 +647,16 @@ async function saveDayActualsFromModal() {
     gAtv = Number((gSales / gTxn).toFixed(2));
   }
 
-  // ACTUALS
-  const sActRaw = $("#modal-sales-actual")?.value;
-  const tActRaw = $("#modal-txn-actual")?.value;
-  const aActRaw = $("#modal-atv-actual")?.value;
+  const salesInput = $("#ty-sales-actual");
+  const txnInput = $("#ty-txn-actual");
 
-  const sAct = sActRaw === "" ? null : Number(sActRaw);
-  const tAct = tActRaw === "" ? null : Number(tActRaw);
-  let aAct = aActRaw === "" ? null : Number(aActRaw);
+  const sAct =
+    salesInput && salesInput.value !== "" ? Number(salesInput.value) : null;
+  const tAct =
+    txnInput && txnInput.value !== "" ? Number(txnInput.value) : null;
 
-  // if ATV Actual left blank but sales & txn actual present, compute
-  if ((aAct == null || isNaN(aAct)) && tAct && sAct) {
+  let aAct = null;
+  if (sAct != null && tAct) {
     aAct = Number((sAct / tAct).toFixed(2));
   }
 
@@ -573,6 +670,36 @@ async function saveDayActualsFromModal() {
     updatePayload.sales_goal = gSales;
     updatePayload.txn_goal = gTxn;
     updatePayload.atv_goal = gAtv;
+  }
+
+  const rowId = modalRow?.id;
+  let error;
+
+  if (rowId) {
+    ({ error } = await supabase
+      .from("forecast_daily")
+      .update(updatePayload)
+      .eq("id", rowId));
+  } else {
+    const insertPayload = {
+      store_id: currentStoreId,
+      date: modalDate,
+      ...updatePayload,
+    };
+    ({ error } = await supabase.from("forecast_daily").insert(insertPayload));
+  }
+
+  if (error) {
+    setStatus(`Error saving day: ${error.message}`);
+  } else {
+    setStatus("Day saved.");
+  }
+
+  $("#dayModal").classList.add("hidden");
+  if (currentStoreId && currentMonth) {
+    loadMonth(currentStoreId, currentMonth);
+  }
+}
   }
 
   const rowId = modalRow?.id;
