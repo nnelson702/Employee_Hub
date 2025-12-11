@@ -499,3 +499,37 @@ textarea {
     display: none;
   }
 }
+
+/* Day details modal layout */
+.day-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.day-modal-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.day-modal-heading {
+  margin-bottom: 0.25rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.field-readonly {
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  background: #020617;
+  border: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 768px) {
+  .day-modal-grid {
+    grid-template-columns: 1fr;
+  }
+}
