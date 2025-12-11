@@ -143,7 +143,6 @@ async function loadTabPermissions() {
   if (profile?.is_admin) {
     allowedTabs.add("admin");
   }
-  // If you want to use tab_access later, wire it here
   applyTabVisibility();
 }
 
@@ -155,12 +154,10 @@ function applyTabVisibility() {
       btn.classList.toggle("hidden", !profile?.is_admin);
       return;
     }
-    // others always visible for now
   });
 }
 
 function routeTo(route) {
-  // block admin if not admin
   if (route === "admin" && !profile?.is_admin) {
     setStatus("Admin only.");
     route = "home";
@@ -190,14 +187,20 @@ function setStatus(msg) {
 }
 
 // === STORES ===
+// Uses your actual schema: table "stores" with columns "id" and "name"
 async function populateStores() {
+  const STORE_TABLE = "stores";
+  const STORE_ID_COL = "id";   // 18228 / 18507 / 18690 / 19117
+  const STORE_NAME_COL = "name"; // Tropicana / Horizon Ridge / ...
+
   const { data, error } = await supabase
-    .from("stores")
-    .select("store_id, store_name")
-    .order("store_id", { ascending: true });
+    .from(STORE_TABLE)
+    .select(`${STORE_ID_COL}, ${STORE_NAME_COL}`)
+    .order(STORE_ID_COL, { ascending: true });
 
   if (error) {
     setStatus(`Store load error: ${error.message}`);
+    console.error("Store load error", error);
     return;
   }
 
@@ -207,16 +210,17 @@ async function populateStores() {
     if (!s) return;
     s.innerHTML = "";
     data.forEach((row) => {
+      const idVal = row[STORE_ID_COL];
+      const nameVal = row[STORE_NAME_COL];
       const opt = document.createElement("option");
-      opt.value = row.store_id;
-      opt.textContent = `${row.store_id} — ${row.store_name || ""}`;
+      opt.value = idVal;
+      opt.textContent = nameVal ? `${idVal} — ${nameVal}` : String(idVal);
       s.appendChild(opt);
     });
   });
 
-  // default current store
   if (data.length > 0) {
-    currentStoreId = data[0].store_id;
+    currentStoreId = data[0][STORE_ID_COL];
   }
 }
 
@@ -228,7 +232,6 @@ function wireSalesPage() {
   if (mInput && !mInput.value) mInput.value = ym;
   currentMonth = mInput?.value || ym;
 
-  // build DOW row
   buildDowRow();
 
   $("#btn-load")?.addEventListener("click", () => {
@@ -262,7 +265,6 @@ function wireSalesPage() {
   });
 
   $("#btn-reset-dow")?.addEventListener("click", async () => {
-    // reset weights to equal
     for (let i = 0; i < 7; i++) {
       const inp = document.getElementById(`dow-weight-${i}`);
       if (inp) inp.value = "1";
@@ -279,7 +281,6 @@ function wireSalesPage() {
     await saveDayActualsFromModal();
   });
 
-  // initial load
   if (currentStoreId && currentMonth) {
     loadMonth(currentStoreId, currentMonth);
   }
@@ -291,7 +292,6 @@ async function loadMonth(storeId, yyyyMM) {
 
   setStatus("Loading forecast data…");
 
-  // optional: call edge function to build forecast
   try {
     await fetch(`${SUPABASE_URL}/functions/v1/build-forecast`, {
       method: "POST",
@@ -359,7 +359,6 @@ function renderCalendar(yyyyMM, rows) {
     0
   ).getDate();
 
-  // leading blanks
   for (let i = 0; i < firstDow; i++) {
     const blank = document.createElement("div");
     blank.className = "day-cell";
@@ -511,7 +510,7 @@ function getMonthMeta(yyyyMM) {
     days.push({
       date: dateStr,
       dayNum: d,
-      dow: dt.getDay(), // 0=Sun…6=Sat
+      dow: dt.getDay(),
     });
   }
   return { daysInMonth, days };
@@ -564,7 +563,6 @@ function updateDowHeaderFromRows(rows) {
   }
 }
 
-// compute suggestions based on weights
 function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
   const { days } = getMonthMeta(yyyyMM);
 
@@ -585,7 +583,6 @@ function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
   });
   if (totalWeight <= 0) totalWeight = days.length;
 
-  // initial allocation
   const raw = [];
   days.forEach((d) => {
     const w = weightByDate[d.date];
@@ -602,7 +599,6 @@ function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
     });
   });
 
-  // round and adjust to exactly match monthly totals
   let salesRoundedTotal = 0;
   let txnRoundedTotal = 0;
   raw.forEach((r) => {
@@ -615,7 +611,6 @@ function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
   const salesDelta = (monthlySales || 0) - salesRoundedTotal;
   const txnDelta = (monthlyTxn || 0) - txnRoundedTotal;
 
-  // distribute deltas by adding/subtracting 0.01 or 1 tx at a time
   function distributeSalesDelta(delta) {
     let remaining = Math.round(delta * 100);
     const sign = remaining >= 0 ? 1 : -1;
@@ -667,7 +662,6 @@ async function applyDowWeightsToMonth() {
     return;
   }
 
-  // load monthly goals
   const { data: mg, error: mgErr } = await supabase
     .from("monthly_goals")
     .select("store_id, month, sales_goal, txn_goal")
@@ -691,7 +685,6 @@ async function applyDowWeightsToMonth() {
     return;
   }
 
-  // collect weights
   const dowWeights = {};
   for (let i = 0; i < 7; i++) {
     const inp = document.getElementById(`dow-weight-${i}`);
@@ -735,7 +728,6 @@ async function applyDowWeightsToMonth() {
   }
 }
 
-// suggest DOW from previous year same month
 async function suggestDowFromHistory() {
   const storeId = $("#storeSelect")?.value;
   const monthVal = $("#monthInput")?.value;
@@ -867,7 +859,6 @@ function wireAdminPage() {
 // === DEPT WALK ===
 function wireDeptWalkPage() {
   $("#btn-dw-save")?.addEventListener("click", () => {
-    // Placeholder: front-end only for now to avoid breaking if table not defined
     alert("Dept Walk save is not wired to a table yet. This is a safe placeholder.");
   });
 }
