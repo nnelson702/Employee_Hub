@@ -533,3 +533,15 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+/* Equalize modal input heights left vs right */
+.day-modal-col input,
+.day-modal-col .field-readonly {
+  height: 2.25rem;
+  padding: 0.35rem 0.55rem;
+  box-sizing: border-box;
+}
+
+.day-modal-col input {
+  line-height: 1.2;
+}
