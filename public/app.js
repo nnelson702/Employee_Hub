@@ -697,11 +697,19 @@ async function applyDowWeightsToMonth() {
     const jsDate = new Date(`${d.date}T00:00:00`);
     const weekOfMonth = Math.ceil((d.dayNum + jsDate.getDay()) / 7);
     const weekdayIndex = jsDate.getDay();
+
+    // compute atv_goal safely (sales ÷ txn), never null
+    let atvGoal = 0;
+    if (sugg.txn > 0) {
+      atvGoal = Number((sugg.sales / sugg.txn).toFixed(2));
+    }
+
     return {
       store_id: storeId,
       date: d.date,
       sales_goal: sugg.sales,
       txn_goal: sugg.txn,
+      atv_goal: atvGoal,
       daily_share: sugg.share,
       week_of_month: weekOfMonth,
       weekday_index: weekdayIndex,
