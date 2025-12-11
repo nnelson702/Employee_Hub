@@ -1,11 +1,15 @@
-// === CONFIG ===
-// TODO: replace with your actual Supabase URL and anon key.
+// =====================
+//  SUPABASE CONFIG
+// =====================
 const SUPABASE_URL = "https://bvyrxqfffaxthrjfxjue.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM";
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// === DOM helpers ===
+// =====================
+//  DOM HELPERS
+// =====================
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
@@ -21,24 +25,29 @@ const fmtMoney = (v) =>
 const fmtInt = (v) =>
   v == null ? "–" : Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-// global-ish state
+// =====================
+//  GLOBAL STATE
+// =====================
 let session = null;
 let profile = null;
 let currentStoreId = null;
 let currentMonth = null;
 
-// allowed tabs (always allowed)
 const ALWAYS_TABS = new Set(["home", "sales", "deptwalk", "deptwalk-results", "b2b", "eir", "pop"]);
 let allowedTabs = new Set(["home", "sales"]);
 
-// === INIT ===
+// =====================
+//  INIT
+// =====================
 document.addEventListener("DOMContentLoaded", () => {
   setupNav();
   bindGlobalButtons();
   initAuth();
 });
 
-// === AUTH ===
+// =====================
+//  AUTH
+// =====================
 async function initAuth() {
   const { data } = await supabase.auth.getSession();
   session = data.session || null;
@@ -126,7 +135,9 @@ async function loadProfileAndBoot() {
   routeTo("sales");
 }
 
-// === TABS / ROUTING ===
+// =====================
+//  NAV / ROUTING
+// =====================
 function setupNav() {
   $$(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -178,23 +189,23 @@ function routeTo(route) {
   }
 }
 
-// === STATUS ===
+// =====================
+//  STATUS
+// =====================
 function setStatus(msg) {
   const el = $("#status");
   if (el) el.textContent = msg || "";
 }
 
-// === STORES ===
-// Uses your actual schema: table "stores" with columns "id" and "name"
+// =====================
+//  STORES
+// =====================
+// Uses table "stores" with columns "id" and "name"
 async function populateStores() {
-  const STORE_TABLE = "stores";
-  const STORE_ID_COL = "id";
-  const STORE_NAME_COL = "name";
-
   const { data, error } = await supabase
-    .from(STORE_TABLE)
-    .select(`${STORE_ID_COL}, ${STORE_NAME_COL}`)
-    .order(STORE_ID_COL, { ascending: true });
+    .from("stores")
+    .select("id, name")
+    .order("id", { ascending: true });
 
   if (error) {
     setStatus(`Store load error: ${error.message}`);
@@ -208,8 +219,8 @@ async function populateStores() {
     if (!s) return;
     s.innerHTML = "";
     data.forEach((row) => {
-      const idVal = row[STORE_ID_COL];
-      const nameVal = row[STORE_NAME_COL];
+      const idVal = row.id;
+      const nameVal = row.name;
       const opt = document.createElement("option");
       opt.value = idVal;
       opt.textContent = nameVal ? `${idVal} — ${nameVal}` : String(idVal);
@@ -218,11 +229,13 @@ async function populateStores() {
   });
 
   if (data.length > 0) {
-    currentStoreId = data[0][STORE_ID_COL];
+    currentStoreId = data[0].id;
   }
 }
 
-// === SALES PAGE ===
+// =====================
+//  SALES PAGE
+// =====================
 function wireSalesPage() {
   const now = new Date();
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -284,7 +297,6 @@ function wireSalesPage() {
   }
 }
 
-// load month data and render calendar
 async function loadMonth(storeId, yyyyMM) {
   if (!storeId || !yyyyMM) return;
 
@@ -300,7 +312,7 @@ async function loadMonth(storeId, yyyyMM) {
       body: JSON.stringify({ storeId, month: yyyyMM }),
     }).catch(() => {});
   } catch (e) {
-    // ignore
+    // ignore network failure for edge function
   }
 
   const [yearStr, monthStr] = yyyyMM.split("-");
@@ -417,28 +429,39 @@ function renderCalendar(yyyyMM, rows) {
   }
 }
 
-// === DAY MODAL ===
+// =====================
+//  DAY MODAL
+// =====================
 let modalDate = null;
 let modalRow = null;
 
 function openDayModal(dateStr, row) {
   modalDate = dateStr;
   modalRow = row || {};
+  const isAdmin = !!(profile && profile.is_admin);
+
   $("#modalTitle").textContent = `Details – ${dateStr}`;
   const container = $("#modal-body");
   if (!container) return;
 
   const gSales = Number(row.sales_goal || 0);
-  const aSales = Number(row.sales_actual || 0);
   const gTxn = Number(row.txn_goal || 0);
+  const gAtv =
+    gTxn > 0 ? Number((gSales / gTxn).toFixed(2)) : Number(row.atv_goal || 0);
+
+  const aSales = Number(row.sales_actual || 0);
   const aTxn = Number(row.txn_actual || 0);
-  const gAtv = Number(row.atv_goal || 0);
   const aAtv = Number(row.atv_actual || 0);
 
   container.innerHTML = `
     <div class="field">
       <label>Sales Goal</label>
-      <div>${fmtMoney(gSales)}</div>
+      <div id="modal-prior-sales" style="text-align:right;font-size:0.8rem;opacity:0.75;">Last year: –</div>
+      ${
+        isAdmin
+          ? `<input type="number" id="modal-sales-goal" value="${gSales || ""}" step="0.01" />`
+          : `<div>${fmtMoney(gSales)}</div>`
+      }
     </div>
     <div class="field">
       <label>Sales Actual</label>
@@ -446,7 +469,12 @@ function openDayModal(dateStr, row) {
     </div>
     <div class="field">
       <label>Txn Goal</label>
-      <div>${fmtInt(gTxn)}</div>
+      <div id="modal-prior-txn" style="text-align:right;font-size:0.8rem;opacity:0.75;">Last year: –</div>
+      ${
+        isAdmin
+          ? `<input type="number" id="modal-txn-goal" value="${gTxn || ""}" step="1" />`
+          : `<div>${fmtInt(gTxn)}</div>`
+      }
     </div>
     <div class="field">
       <label>Txn Actual</label>
@@ -454,6 +482,7 @@ function openDayModal(dateStr, row) {
     </div>
     <div class="field">
       <label>ATV Goal</label>
+      <div id="modal-prior-atv" style="text-align:right;font-size:0.8rem;opacity:0.75;">Last year: –</div>
       <div>${fmtMoney(gAtv)}</div>
     </div>
     <div class="field">
@@ -463,30 +492,111 @@ function openDayModal(dateStr, row) {
   `;
 
   $("#dayModal").classList.remove("hidden");
+
+  // asynchronous load of prior-year values
+  loadPriorYearForDay(dateStr);
+}
+
+async function loadPriorYearForDay(dateStr) {
+  try {
+    if (!currentStoreId) return;
+    const dt = new Date(`${dateStr}T00:00:00`);
+    const priorYear = dt.getFullYear() - 1;
+    const priorDateStr = `${priorYear}-${String(dt.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(dt.getDate()).padStart(2, "0")}`;
+
+    const { data, error } = await supabase
+      .from("historical_sales")
+      .select("date, net_sales")
+      .eq("store_id", currentStoreId)
+      .eq("date", priorDateStr)
+      .maybeSingle();
+
+    if (error || !data) return;
+
+    const sales = Number(data.net_sales || 0);
+
+    const salesSpan = $("#modal-prior-sales");
+    if (salesSpan) salesSpan.textContent = `Last year: ${fmtMoney(sales)}`;
+
+    // Txn & ATV placeholders; fill when those metrics exist in historical data
+    const txnSpan = $("#modal-prior-txn");
+    if (txnSpan) txnSpan.textContent = "Last year: –";
+    const atvSpan = $("#modal-prior-atv");
+    if (atvSpan) atvSpan.textContent = "Last year: –";
+  } catch (e) {
+    console.error("Error loading prior-year daily values", e);
+  }
 }
 
 async function saveDayActualsFromModal() {
   if (!modalDate || !currentStoreId) return;
-  const sAct = Number($("#modal-sales-actual")?.value || 0) || null;
-  const tAct = Number($("#modal-txn-actual")?.value || 0) || null;
-  const aAct = Number($("#modal-atv-actual")?.value || 0) || null;
+  const isAdmin = !!(profile && profile.is_admin);
 
-  const payload = {
-    store_id: currentStoreId,
-    date: modalDate,
+  // GOALS (admin can edit)
+  let gSales = Number(modalRow.sales_goal || 0);
+  let gTxn = Number(modalRow.txn_goal || 0);
+
+  if (isAdmin) {
+    gSales = Number($("#modal-sales-goal")?.value || 0) || 0;
+    gTxn = Number($("#modal-txn-goal")?.value || 0) || 0;
+  }
+
+  let gAtv = 0;
+  if (gTxn > 0) {
+    gAtv = Number((gSales / gTxn).toFixed(2));
+  }
+
+  // ACTUALS
+  const sActRaw = $("#modal-sales-actual")?.value;
+  const tActRaw = $("#modal-txn-actual")?.value;
+  const aActRaw = $("#modal-atv-actual")?.value;
+
+  const sAct = sActRaw === "" ? null : Number(sActRaw);
+  const tAct = tActRaw === "" ? null : Number(tActRaw);
+  let aAct = aActRaw === "" ? null : Number(aActRaw);
+
+  // if ATV Actual left blank but sales & txn actual present, compute
+  if ((aAct == null || isNaN(aAct)) && tAct && sAct) {
+    aAct = Number((sAct / tAct).toFixed(2));
+  }
+
+  const updatePayload = {
     sales_actual: sAct,
     txn_actual: tAct,
     atv_actual: aAct,
   };
 
-  // delete existing row for that store/date, then insert
-  await supabase.from("forecast_daily").delete().eq("store_id", currentStoreId).eq("date", modalDate);
-  const { error } = await supabase.from("forecast_daily").insert(payload);
+  if (isAdmin) {
+    updatePayload.sales_goal = gSales;
+    updatePayload.txn_goal = gTxn;
+    updatePayload.atv_goal = gAtv;
+  }
+
+  const rowId = modalRow?.id;
+  let error;
+
+  if (rowId) {
+    ({ error } = await supabase
+      .from("forecast_daily")
+      .update(updatePayload)
+      .eq("id", rowId));
+  } else {
+    // Fallback insert if somehow row doesn't exist; minimal fields only
+    const insertPayload = {
+      store_id: currentStoreId,
+      date: modalDate,
+      ...updatePayload,
+    };
+    ({ error } = await supabase.from("forecast_daily").insert(insertPayload));
+  }
 
   if (error) {
-    setStatus(`Error saving actuals: ${error.message}`);
+    setStatus(`Error saving day: ${error.message}`);
   } else {
-    setStatus("Actuals saved.");
+    setStatus("Day saved.");
   }
 
   $("#dayModal").classList.add("hidden");
@@ -495,7 +605,9 @@ async function saveDayActualsFromModal() {
   }
 }
 
-// === DOW WEIGHTS ===
+// =====================
+//  DOW WEIGHTS
+// =====================
 function getMonthMeta(yyyyMM) {
   const [y, m] = yyyyMM.split("-");
   const year = Number(y);
@@ -698,7 +810,6 @@ async function applyDowWeightsToMonth() {
     const weekOfMonth = Math.ceil((d.dayNum + jsDate.getDay()) / 7);
     const weekdayIndex = jsDate.getDay();
 
-    // compute atv_goal safely (sales ÷ txn), never null
     let atvGoal = 0;
     if (sugg.txn > 0) {
       atvGoal = Number((sugg.sales / sugg.txn).toFixed(2));
@@ -718,7 +829,6 @@ async function applyDowWeightsToMonth() {
 
   $("#dow-status").textContent = "Saving daily goals…";
 
-  // delete existing rows for this store + month, then insert new rows
   const [yearStr, monthStr] = monthVal.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr);
@@ -833,7 +943,9 @@ async function suggestDowFromHistory() {
   $("#dow-status").textContent = "Suggested weights loaded from prior-year history.";
 }
 
-// === ADMIN ===
+// =====================
+//  ADMIN PAGE
+// =====================
 function wireAdminPage() {
   $("#btn-admin-load-goals")?.addEventListener("click", async () => {
     const storeId = $("#admin-store")?.value;
@@ -871,7 +983,6 @@ function wireAdminPage() {
       txn_goal: tGoal,
     };
 
-    // delete existing row for that store/month then insert
     await supabase.from("monthly_goals").delete().eq("store_id", storeId).eq("month", monthVal);
     const { error } = await supabase.from("monthly_goals").insert(payload);
 
@@ -881,9 +992,15 @@ function wireAdminPage() {
       $("#admin-goals-status").textContent = "Goals saved.";
     }
   });
+
+  // NOTE: monthly goal suggestions (based on history + growth %) can be
+  // added here next; wiring the button now will be safe even if the
+  // corresponding HTML isn't present yet.
 }
 
-// === DEPT WALK ===
+// =====================
+//  DEPT WALK (STUB)
+// =====================
 function wireDeptWalkPage() {
   $("#btn-dw-save")?.addEventListener("click", () => {
     alert("Dept Walk save is not wired to a table yet. This is a safe placeholder.");
