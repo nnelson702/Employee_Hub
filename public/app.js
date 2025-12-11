@@ -700,37 +700,6 @@ async function saveDayActualsFromModal() {
     loadMonth(currentStoreId, currentMonth);
   }
 }
-  }
-
-  const rowId = modalRow?.id;
-  let error;
-
-  if (rowId) {
-    ({ error } = await supabase
-      .from("forecast_daily")
-      .update(updatePayload)
-      .eq("id", rowId));
-  } else {
-    // Fallback insert if somehow row doesn't exist; minimal fields only
-    const insertPayload = {
-      store_id: currentStoreId,
-      date: modalDate,
-      ...updatePayload,
-    };
-    ({ error } = await supabase.from("forecast_daily").insert(insertPayload));
-  }
-
-  if (error) {
-    setStatus(`Error saving day: ${error.message}`);
-  } else {
-    setStatus("Day saved.");
-  }
-
-  $("#dayModal").classList.add("hidden");
-  if (currentStoreId && currentMonth) {
-    loadMonth(currentStoreId, currentMonth);
-  }
-}
 
 // =====================
 //  DOW WEIGHTS
