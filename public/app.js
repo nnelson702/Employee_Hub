@@ -124,13 +124,13 @@ async function loadStores() {
 
   const { data } = await supabase
     .from("stores")
-    .select("store_id, name")
+    .select("store_id, store_name")
     .order("store_id");
 
   data?.forEach((s) => {
     const o = document.createElement("option");
     o.value = s.store_id;
-    o.textContent = `${s.store_id} — ${s.name}`;
+    o.textContent = `${s.store_id} — ${s.store_name}`;
     sel.appendChild(o);
   });
 
