@@ -142,6 +142,7 @@ async function loadStores() {
 
 document.addEventListener("DOMContentLoaded", () => {
   $("#btn-signin")?.addEventListener("click", handleSignIn);
+  $("#auth-form")?.addEventListener("submit", handleSignIn);
   $("#btn-signout")?.addEventListener("click", handleSignOut);
   $$("[data-tab]").forEach((b) =>
     b.addEventListener("click", () => showTab(b.dataset.tab))
@@ -908,7 +909,7 @@ async function adminLoadUsers() {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id,email,full_name,is_admin")
+    .select("id,email,is_admin")
     .order("email", { ascending: true });
 
   if (error) {
