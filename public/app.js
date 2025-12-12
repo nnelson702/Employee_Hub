@@ -1511,4 +1511,99 @@ async function adminOpenAccessEditor(user) {
 /* =========================
    END HOTFIX OVERRIDES
    ========================= */
+/* ===========================
+   Calendar + Day Click Restore
+   Paste at VERY BOTTOM of app.js
+=========================== */
+(function () {
+  const $ = (s) => document.querySelector(s);
 
+  function _money(n) {
+    if (n == null || Number.isNaN(Number(n))) return "—";
+    return Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+  function _money2(n) {
+    if (n == null || Number.isNaN(Number(n))) return "—";
+    return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  // Only define buildCalendar if missing
+  if (typeof window.buildCalendar !== "function") {
+    window.buildCalendar = function buildCalendar(storeId, monthVal, rows) {
+      // Try common calendar hosts
+      const host =
+        $("#calendarGrid") ||
+        $("#calendar") ||
+        document.querySelector(".calendar") ||
+        $("#calendarHost");
+
+      if (!host) return;
+
+      const rowByDate = new Map((rows || []).map((r) => [r.date, r]));
+
+      const [yStr, mStr] = (monthVal || "").split("-");
+      const year = Number(yStr);
+      const month = Number(mStr);
+      if (!year || !month) {
+        host.innerHTML = `<div class="muted">Select a store + month, then Load.</div>`;
+        return;
+      }
+
+      const first = new Date(year, month - 1, 1);
+      const startDow = first.getDay();
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+      let html = `
+        <div class="calendar-wrap">
+          <div class="calendar-header">
+            ${dow.map((d) => `<div class="calendar-dow">${d}</div>`).join("")}
+          </div>
+          <div class="calendar-body">
+      `;
+
+      for (let i = 0; i < startDow; i++) html += `<div class="calendar-cell empty"></div>`;
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${yStr}-${mStr}-${String(day).padStart(2, "0")}`;
+        const r = rowByDate.get(dateStr);
+
+        const salesGoal = r?.sales_goal ?? null;
+        const txnGoal = r?.txn_goal ?? null;
+        const atvGoal = r?.atv_goal ?? (txnGoal ? (salesGoal / txnGoal) : null);
+
+        const locked =
+          typeof window.dailyLocked !== "undefined"
+            ? !!window.dailyLocked
+            : !!r?.locked;
+
+        html += `
+          <div class="calendar-cell ${locked ? "locked" : ""}" data-date="${dateStr}">
+            <div class="calendar-daynum">${day}</div>
+            <div class="calendar-metrics">
+              <div class="mrow"><span class="mlabel">Sales</span><span class="mval">${_money(salesGoal)}</span></div>
+              <div class="mrow"><span class="mlabel">Txn</span><span class="mval">${_money(txnGoal)}</span></div>
+              <div class="mrow"><span class="mlabel">ATV</span><span class="mval">${_money2(atvGoal)}</span></div>
+            </div>
+          </div>
+        `;
+      }
+
+      html += `</div></div>`;
+      host.innerHTML = html;
+
+      const cells = host.querySelectorAll(".calendar-cell[data-date]");
+      cells.forEach((cell) => {
+        const date = cell.dataset.date;
+        cell._rowData = rowByDate.get(date) || { store_id: storeId, date };
+        cell.onclick = () => {
+          if (typeof window.openDayModal === "function") {
+            window.openDayModal(date, cell._rowData);
+          } else {
+            alert("Day modal missing (openDayModal not loaded).");
+          }
+        };
+      });
+    };
+  }
+})();
