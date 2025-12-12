@@ -5,313 +5,338 @@
   <title>Skye Bridge – Sales & Ops Portal</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="styles.css" />
-  <!-- Supabase client CDN -->
   <script src="https://unpkg.com/@supabase/supabase-js@2.48.0/dist/umd/supabase.js"></script>
 </head>
+
 <body>
-  <!-- Top Nav -->
-  <header class="top-nav">
-    <div class="brand">
-      <span class="brand-main">Skye Bridge</span>
-      <span class="brand-sub">Sales & Operations</span>
+  <!-- AUTH (signed-out) -->
+  <main id="auth-block" class="auth-shell">
+    <div class="auth-card">
+      <div class="brand-lockup">
+        <div class="brand-main">Skye Bridge</div>
+        <div class="brand-sub">Sales & Operations</div>
+      </div>
+
+      <h1 class="auth-title">Sign in</h1>
+      <p class="muted small">Use your email + password. (Invited users must set a password in Supabase Auth.)</p>
+
+      <form id="auth-form" class="auth-form">
+        <label class="field">
+          <span>Email</span>
+          <input id="email" type="email" autocomplete="email" placeholder="name@company.com" />
+        </label>
+
+        <label class="field">
+          <span>Password</span>
+          <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
+        </label>
+
+        <button id="btn-signin" class="btn-primary" type="submit">Sign in</button>
+      </form>
+
+      <div class="auth-foot muted small">
+        If your invite link sends you here without a password setup flow, an admin needs to resend the invite
+        with password setup enabled or you can use the Supabase “Reset Password” email flow.
+      </div>
     </div>
-    <nav class="nav-links">
-      <button data-route="home" class="nav-btn active">Home</button>
-      <button data-route="sales" class="nav-btn">Sales</button>
-      <button data-route="deptwalk" class="nav-btn">Dept Walk</button>
-      <button data-route="deptwalk-results" class="nav-btn">Walk Results</button>
-      <button data-route="b2b" class="nav-btn">B2B</button>
-      <button data-route="eir" class="nav-btn">EIR</button>
-      <button data-route="pop" class="nav-btn">POP / Library</button>
-      <button data-route="admin" class="nav-btn admin-only">Admin</button>
-    </nav>
-    <div class="nav-auth">
-      <span id="whoami" class="whoami"></span>
-      <button id="btn-signin" class="pill small">Sign in</button>
-      <button id="btn-signout" class="pill small hidden">Sign out</button>
-    </div>
-  </header>
-
-  <!-- Global status bar -->
-  <div id="status" class="status-bar"></div>
-
-  <!-- PAGES -->
-  <main>
-    <!-- HOME -->
-    <section id="page-home" class="page">
-      <h1>Welcome</h1>
-      <p>
-        This internal tool supports Skye Bridge ACE Hardware stores with:
-      </p>
-      <ul class="bullet-list">
-        <li>Sales goal setting, daily breakdowns, and performance tracking</li>
-        <li>Department walk checklists and follow-up tracking</li>
-        <li>B2B and EIR pipelines (coming online)</li>
-        <li>POP and Library resources for in-store execution</li>
-      </ul>
-      <p class="muted">
-        Use the navigation bar above to select a module. Sign in to unlock store data.
-      </p>
-    </section>
-
-    <!-- SALES / FORECASTING -->
-    <section id="page-sales" class="page hidden">
-      <div class="page-header">
-        <h1>Sales Goals & Daily Breakdown</h1>
-        <p class="muted small">
-          Set monthly goals, tune day-of-week weights, and push a finalized daily plan to the calendar.
-        </p>
-      </div>
-
-      <!-- Store + Month controls -->
-      <div class="toolbar">
-        <div class="field">
-          <label for="storeSelect">Store</label>
-          <select id="storeSelect"></select>
-        </div>
-        <div class="field">
-          <label for="monthInput">Month</label>
-          <input type="month" id="monthInput" />
-        </div>
-        <button id="btn-load" class="pill primary">Load Month</button>
-      </div>
-
-      <!-- Summary -->
-      <div id="summary" class="summary-card">
-        <div class="summary-row">
-          <span>Sales</span>
-          <span id="summary-sales" class="summary-value">–</span>
-        </div>
-        <div class="summary-row">
-          <span>Transactions</span>
-          <span id="summary-txns" class="summary-value">–</span>
-        </div>
-        <div class="summary-row">
-          <span>Progress vs Goal</span>
-          <span id="summary-progress" class="summary-value">–</span>
-        </div>
-      </div>
-
-      <!-- DOW weights -->
-      <section class="card">
-        <header class="card-header">
-          <div>
-            <h2>Day-of-Week Mix</h2>
-            <p class="muted tiny">
-              Use weights to shape how monthly goals are split by day. Higher = bigger share of the month.
-            </p>
-          </div>
-          <div class="btn-row">
-            <button id="btn-suggest-dow" class="pill small">Suggest from history</button>
-            <button id="btn-reset-dow" class="pill small">Reset to equal & apply</button>
-            <button id="btn-apply-dow" class="pill small primary">Apply to daily goals</button>
-          </div>
-        </header>
-        <div id="dow-weights-row" class="dow-row">
-          <!-- 7 cells inserted by JS -->
-        </div>
-        <div id="dow-status" class="microstatus"></div>
-      </section>
-
-      <!-- Calendar -->
-      <section class="card">
-        <header class="card-header">
-          <h2>Daily Calendar</h2>
-          <p class="muted tiny">
-            Each cell shows either goal or actuals depending on date. Click a day for details.
-          </p>
-        </header>
-        <div id="calendar" class="calendar-grid">
-          <!-- days inserted by JS -->
-        </div>
-      </section>
-    </section>
-
-    <!-- DEPT WALK -->
-    <section id="page-deptwalk" class="page hidden">
-      <div class="page-header">
-        <h1>Department Walk – Shift Readiness</h1>
-        <p class="muted small">
-          Quick walk to confirm in-aisle readiness, signage, and merchandising standards.
-        </p>
-      </div>
-
-      <section class="card">
-        <header class="card-header">
-          <h2>Walk Details</h2>
-        </header>
-        <div class="form-grid">
-          <div class="field">
-            <label for="dw-store">Store</label>
-            <select id="dw-store"></select>
-          </div>
-          <div class="field">
-            <label for="dw-date">Date</label>
-            <input type="date" id="dw-date" />
-          </div>
-          <div class="field">
-            <label for="dw-area">Area / Department</label>
-            <input type="text" id="dw-area" placeholder="Grills, Paint, Plumbing..." />
-          </div>
-          <div class="field full">
-            <label for="dw-notes">Observations</label>
-            <textarea id="dw-notes" rows="4" placeholder="Stock levels, facing, signage, promos, safety, etc."></textarea>
-          </div>
-        </div>
-        <div class="btn-row right">
-          <button id="btn-dw-save" class="pill primary">Save Walk (placeholder)</button>
-        </div>
-        <p class="muted tiny">
-          Note: back-end wiring for Dept Walks can be pointed at a Supabase table matching your original
-          Google Sheets / code.gs structure.
-        </p>
-      </section>
-    </section>
-
-    <!-- DEPT WALK RESULTS -->
-    <section id="page-deptwalk-results" class="page hidden">
-      <div class="page-header">
-        <h1>Dept Walk Results</h1>
-        <p class="muted small">
-          Future home for roll-ups of dept walks, issue counts, and follow-ups by store and time period.
-        </p>
-      </div>
-      <section class="card">
-        <header class="card-header">
-          <h2>Summary (Placeholder)</h2>
-        </header>
-        <p class="muted">
-          Once wired, this view will show trends by department, recurring issues, and completion percentages.
-        </p>
-      </section>
-    </section>
-
-    <!-- B2B -->
-    <section id="page-b2b" class="page hidden">
-      <div class="page-header">
-        <h1>B2B Pipeline</h1>
-        <p class="muted small">
-          Placeholder for tracking key business accounts, quotes, and follow-up tasks.
-        </p>
-      </div>
-      <section class="card">
-        <header class="card-header">
-          <h2>Coming Soon</h2>
-        </header>
-        <p class="muted">
-          This section will mirror your B2B champion and outside sales structure as we wire in the data model.
-        </p>
-      </section>
-    </section>
-
-    <!-- EIR -->
-    <section id="page-eir" class="page hidden">
-      <div class="page-header">
-        <h1>EIR – Exception Item Review</h1>
-        <p class="muted small">
-          Placeholder for exception SKUs, pricing issues, and ad-hoc reports.
-        </p>
-      </div>
-      <section class="card">
-        <header class="card-header">
-          <h2>Coming Soon</h2>
-        </header>
-        <p class="muted">
-          Will eventually pull from your irregular SKU / price / promo data.
-        </p>
-      </section>
-    </section>
-
-    <!-- POP / Library -->
-    <section id="page-pop" class="page hidden">
-      <div class="page-header">
-        <h1>POP / Library</h1>
-        <p class="muted small">
-          Placeholder for storing pdfs, images, and copy for POP, huddle boards, and visual programs.
-        </p>
-      </div>
-      <section class="card">
-        <header class="card-header">
-          <h2>Coming Soon</h2>
-        </header>
-        <p class="muted">
-          We can connect this to a Supabase storage bucket or simple content tables aligned with your campaigns.
-        </p>
-      </section>
-    </section>
-
-    <!-- ADMIN -->
-    <section id="page-admin" class="page hidden">
-      <div class="page-header">
-        <h1>Admin</h1>
-        <p class="muted small">
-          Admin-only controls for goals, access, and settings.
-        </p>
-      </div>
-
-      <!-- Monthly goals -->
-      <section class="card">
-        <header class="card-header">
-          <div>
-            <h2>Monthly Goals (Admin)</h2>
-            <p class="muted tiny">
-              Set store-level monthly sales and transaction goals. The Sales page will break these into daily goals.
-            </p>
-          </div>
-        </header>
-        <div class="form-grid">
-          <div class="field">
-            <label for="admin-store">Store</label>
-            <select id="admin-store"></select>
-          </div>
-          <div class="field">
-            <label for="admin-month">Month</label>
-            <input type="month" id="admin-month" />
-          </div>
-          <div class="field">
-            <label for="admin-sales-goal">Sales Goal</label>
-            <input type="number" id="admin-sales-goal" step="0.01" />
-          </div>
-          <div class="field">
-            <label for="admin-txn-goal">Transaction Goal</label>
-            <input type="number" id="admin-txn-goal" step="1" />
-          </div>
-        </div>
-        <div class="btn-row right">
-          <button id="btn-admin-load-goals" class="pill small">Load</button>
-          <button id="btn-admin-save-goals" class="pill primary small">Save Goals</button>
-        </div>
-        <div id="admin-goals-status" class="microstatus"></div>
-      </section>
-
-      <!-- Access management (simple stub) -->
-      <section class="card">
-        <header class="card-header">
-          <h2>User & Tab Access (Stub)</h2>
-        </header>
-        <p class="muted tiny">
-          We can wire this to your <code>tab_access</code> and <code>store_access</code> tables later. For now these
-          are placeholders so the layout matches your intent.
-        </p>
-      </section>
-    </section>
   </main>
 
-  <!-- Day Details Modal -->
-  <div id="dayModal" class="modal hidden">
-    <div class="modal-content">
-      <header class="modal-header">
-        <h2 id="modalTitle">Day details</h2>
-      </header>
-      <div id="modal-body" class="modal-body">
-        <!-- populated by JS -->
+  <!-- APP (signed-in) -->
+  <div id="app-shell" class="app-shell hidden">
+    <header class="top-nav">
+      <div class="brand">
+        <span class="brand-main">Skye Bridge</span>
+        <span class="brand-sub">Sales & Operations</span>
       </div>
-      <footer class="modal-footer">
-        <button id="btnSaveModal" class="pill primary small">Save Actuals</button>
-        <button id="btn-close-modal" class="pill small">Close</button>
-      </footer>
-    </div>
+
+      <nav class="nav-tabs">
+        <button class="tab-btn active" data-tab="home" type="button">Home</button>
+        <button class="tab-btn" data-tab="sales" type="button">Sales Goals</button>
+        <button class="tab-btn" data-tab="pl-tools" type="button">P&L Tools</button>
+        <button class="tab-btn" data-tab="deptwalk" type="button">Dept Walks</button>
+        <button class="tab-btn" data-tab="deptwalk-results" type="button">Walk Results</button>
+        <button class="tab-btn" data-tab="b2b" type="button">B2B</button>
+        <button class="tab-btn" data-tab="eir" type="button">EIR</button>
+        <button class="tab-btn" data-tab="pop" type="button">POP</button>
+        <button class="tab-btn hidden" data-tab="admin" type="button">Admin</button>
+      </nav>
+
+      <div class="nav-right">
+        <span class="user-pill">
+          <span class="muted small">Signed in:</span>
+          <strong id="signedInUser">—</strong>
+        </span>
+        <button id="btn-signout" class="btn-secondary" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <!-- HOME -->
+      <section id="tab-home" class="tab-view">
+        <div class="page-header">
+          <h1>Welcome</h1>
+          <p class="muted">
+            This portal is built for monthly goal setting, daily breakdowns, and operational tools.
+            Tabs will appear based on your access.
+          </p>
+        </div>
+
+        <div class="grid-2">
+          <section class="card">
+            <header class="card-header">
+              <h2>Quick Start</h2>
+            </header>
+            <div class="card-body">
+              <ol class="steps">
+                <li>Go to <strong>Sales Goals</strong></li>
+                <li>Select a store + month</li>
+                <li>Save/lock monthly goals</li>
+                <li>Apply DOW weights → generate daily breakdown</li>
+                <li>Optionally edit specific days → Save Day</li>
+                <li>Save/lock daily plan when finalized</li>
+              </ol>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-header">
+              <h2>Status</h2>
+            </header>
+            <div class="card-body">
+              <ul class="bullets">
+                <li>Monthly goals are stored in <code>monthly_goals</code></li>
+                <li>Daily goals/actuals are stored in <code>forecast_daily</code></li>
+                <li>Admin can manage user tab access + admin flag</li>
+              </ul>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- SALES GOALS -->
+      <section id="tab-sales" class="tab-view hidden">
+        <div class="page-header">
+          <h1>Sales Goals</h1>
+          <p class="muted small">Set monthly goals, generate a daily plan, edit individual days, then lock.</p>
+        </div>
+
+        <section class="card">
+          <header class="card-header">
+            <h2>Scope</h2>
+          </header>
+
+          <div class="card-body scope-row">
+            <label class="field">
+              <span>Store</span>
+              <select id="storeSelect">
+                <option value="">Select a store…</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Month</span>
+              <!-- Accepts date or month. getSelectedMonthValue() handles both -->
+              <input id="monthInput" type="date" />
+            </label>
+
+            <button id="loadMonthBtn" class="btn-secondary" type="button">Load</button>
+          </div>
+        </section>
+
+        <section class="grid-2">
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title-row">
+                <h2>Monthly Goals</h2>
+                <span id="monthlyLockBadge" class="badge hidden"></span>
+              </div>
+            </header>
+
+            <div class="card-body">
+              <div class="fields-2">
+                <label class="field">
+                  <span>Monthly Sales Goal</span>
+                  <input id="monthlySalesGoal" type="number" step="0.01" placeholder="0.00" />
+                </label>
+
+                <label class="field">
+                  <span>Monthly Txn Goal</span>
+                  <input id="monthlyTxnGoal" type="number" step="1" placeholder="0" />
+                </label>
+              </div>
+
+              <div class="btn-row">
+                <button id="saveMonthlyBtn" class="btn-primary" type="button">Save + Lock</button>
+                <button id="unlockMonthlyBtn" class="btn-secondary hidden" type="button">Unlock</button>
+                <span id="sales-status" class="status-text"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <header class="card-header">
+              <div class="card-title-row">
+                <h2>Daily Breakdown</h2>
+                <span id="dailyLockBadge" class="badge hidden"></span>
+              </div>
+            </header>
+
+            <div class="card-body">
+              <div class="dow-grid">
+                <label class="field smallfield"><span>Sun</span><input id="dow-sun" type="number" step="1" value="1" /></label>
+                <label class="field smallfield"><span>Mon</span><input id="dow-mon" type="number" step="1" value="1" /></label>
+                <label class="field smallfield"><span>Tue</span><input id="dow-tue" type="number" step="1" value="1" /></label>
+                <label class="field smallfield"><span>Wed</span><input id="dow-wed" type="number" step="1" value="1" /></label>
+                <label class="field smallfield"><span>Thu</span><input id="dow-thu" type="number" step="1" value="1" /></label>
+                <label class="field smallfield"><span>Fri</span><input id="dow-fri" type="number" step="1" value="1" /></label>
+                <label class="field smallfield"><span>Sat</span><input id="dow-sat" type="number" step="1" value="1" /></label>
+              </div>
+
+              <div class="btn-row">
+                <button id="suggestDowBtn" class="btn-secondary" type="button">Suggest</button>
+                <button id="applyDowBtn" class="btn-primary" type="button">Apply to Month</button>
+                <button id="saveDailyBtn" class="btn-primary" type="button">Save + Lock Daily</button>
+                <button id="unlockDailyBtn" class="btn-secondary hidden" type="button">Unlock Daily</button>
+              </div>
+
+              <div class="status-row">
+                <span id="dow-status" class="status-text"></span>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="card">
+          <header class="card-header">
+            <h2>Calendar</h2>
+            <p class="muted small">Click a day to view/edit details. (Edits require daily plan unlocked.)</p>
+          </header>
+
+          <div class="card-body">
+            <div id="calendarHost" class="calendar-host"></div>
+          </div>
+        </section>
+      </section>
+
+      <!-- P&L TOOLS -->
+      <section id="tab-pl-tools" class="tab-view hidden"></section>
+
+      <!-- DEPT WALK -->
+      <section id="tab-deptwalk" class="tab-view hidden"></section>
+
+      <!-- DEPT WALK RESULTS -->
+      <section id="tab-deptwalk-results" class="tab-view hidden">
+        <div class="page-header">
+          <h1>Walk Results</h1>
+          <p class="muted small">Placeholder.</p>
+        </div>
+      </section>
+
+      <!-- B2B -->
+      <section id="tab-b2b" class="tab-view hidden">
+        <div class="page-header">
+          <h1>B2B</h1>
+          <p class="muted small">Placeholder.</p>
+        </div>
+      </section>
+
+      <!-- EIR -->
+      <section id="tab-eir" class="tab-view hidden">
+        <div class="page-header">
+          <h1>EIR</h1>
+          <p class="muted small">Placeholder.</p>
+        </div>
+      </section>
+
+      <!-- POP -->
+      <section id="tab-pop" class="tab-view hidden">
+        <div class="page-header">
+          <h1>POP</h1>
+          <p class="muted small">Placeholder.</p>
+        </div>
+      </section>
+
+      <!-- ADMIN -->
+      <section id="tab-admin" class="tab-view hidden">
+        <div class="page-header">
+          <h1>Admin</h1>
+          <p class="muted small">Manage user roles and tab access.</p>
+        </div>
+
+        <section class="card">
+          <header class="card-header">
+            <h2>Manage Employees</h2>
+          </header>
+          <div class="card-body">
+            <div class="btn-row">
+              <button id="adminLoadUsersBtn" class="btn-secondary" type="button">Load Users</button>
+              <span id="admin-users-status" class="status-text"></span>
+            </div>
+            <div id="admin-users-table" class="table-wrap"></div>
+          </div>
+        </section>
+      </section>
+    </main>
   </div>
+
+  <!-- Calendar renderer (kept in HTML so app.js can remain modular) -->
+  <script>
+    // Minimal calendar renderer used by app.js: must define buildCalendar(storeId, monthVal, rows)
+    function buildCalendar(storeId, monthVal, rows) {
+      const host = document.getElementById("calendarHost");
+      if (!host) return;
+
+      const [y, m] = monthVal.split("-").map(Number);
+      const first = new Date(y, m - 1, 1);
+      const last = new Date(y, m, 0);
+      const daysInMonth = last.getDate();
+      const startDow = first.getDay(); // 0=Sun
+
+      const rowByDate = new Map((rows || []).map(r => [r.date, r]));
+
+      const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+      let html = '<div class="calendar">';
+      html += '<div class="calendar-head">';
+      dayNames.forEach(d => html += `<div class="calendar-dow">${d}</div>`);
+      html += '</div>';
+
+      html += '<div class="calendar-grid">';
+
+      // leading blanks
+      for (let i=0; i<startDow; i++) {
+        html += '<div class="calendar-cell calendar-blank"></div>';
+      }
+
+      for (let day=1; day<=daysInMonth; day++) {
+        const dateStr = `${String(y)}-${String(m).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+        const r = rowByDate.get(dateStr) || null;
+
+        const sales = r?.sales_goal != null ? Number(r.sales_goal).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) : "";
+        const txn = r?.txn_goal != null ? Number(r.txn_goal).toLocaleString() : "";
+
+        html += `
+          <div class="calendar-cell" data-date="${dateStr}">
+            <div class="calendar-daynum">${day}</div>
+            <div class="calendar-mini">
+              <div class="mini-row"><span class="mini-lbl">Sales</span><span class="mini-val">${sales}</span></div>
+              <div class="mini-row"><span class="mini-lbl">Txn</span><span class="mini-val">${txn}</span></div>
+            </div>
+          </div>
+        `;
+      }
+
+      // trailing blanks to complete grid
+      const totalCells = startDow + daysInMonth;
+      const trailing = (7 - (totalCells % 7)) % 7;
+      for (let i=0; i<trailing; i++) {
+        html += '<div class="calendar-cell calendar-blank"></div>';
+      }
+
+      html += '</div></div>';
+      host.innerHTML = html;
+    }
+  </script>
 
   <script src="app.js"></script>
 </body>
