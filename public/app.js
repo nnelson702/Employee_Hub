@@ -1,1104 +1,1194 @@
-// =====================
-//  SUPABASE CONFIG
-// =====================
+/* =========================================================
+   app_final_part01_of_10.txt
+   Baseline Repair + Locks + P&L Placeholder
+   PART 1/10 — Core bootstrap, config, auth, global state
+   ========================================================= */
+
+// NOTE: Concatenate parts 01 → 10 in order to form final app.js
+
 const SUPABASE_URL = "https://bvyrxqfffaxthrjfxjue.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM";
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// =====================
-//  DOM HELPERS
-// =====================
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-
-const fmtMoney = (v) =>
-  v == null
-    ? "–"
-    : Number(v).toLocaleString(undefined, {
-        style: "currency",
-        currency: "USD",
-        maximumFractionDigits: 2,
-      });
-
-const fmtInt = (v) =>
-  v == null ? "–" : Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
-
-// =====================
-//  GLOBAL STATE
-// =====================
 let session = null;
 let profile = null;
 let currentStoreId = null;
 let currentMonth = null;
 
-const ALWAYS_TABS = new Set(["home", "sales", "deptwalk", "deptwalk-results", "b2b", "eir", "pop"]);
-let allowedTabs = new Set(["home", "sales"]);
+let monthlyLocked = false;
+let dailyLocked = false;
 
-// =====================
-//  INIT
-// =====================
+const BASE_TABS = new Set([
+  "home",
+  "sales",
+  "pl-tools",
+  "deptwalk",
+  "deptwalk-results",
+  "b2b",
+  "eir",
+  "pop"
+]);
+
+let allowedTabs = new Set([...BASE_TABS]);
+
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+async function initAuth() {
+  const { data } = await supabase.auth.getSession();
+  session = data?.session ?? null;
+
+  supabase.auth.onAuthStateChange((_e, s) => {
+    session = s;
+    s ? onSignedIn() : onSignedOut();
+  });
+
+  session ? onSignedIn() : onSignedOut();
+}
+
+async function handleSignIn(e) {
+  e.preventDefault();
+  const email = $("#email")?.value;
+  const password = $("#password")?.value;
+  if (!email || !password) return alert("Missing credentials");
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) alert(error.message);
+}
+
+async function handleSignOut() {
+  await supabase.auth.signOut();
+}
+
+async function onSignedIn() {
+  $("#auth-block")?.classList.add("hidden");
+  $("#app-shell")?.classList.remove("hidden");
+
+  const { data } = await supabase.auth.getUser();
+  $("#signedInUser").textContent = data?.user?.email ?? "";
+
+  await loadProfile();
+  await loadStores();
+  await loadAccessAndTabs();
+  showTab("home");
+}
+
+function onSignedOut() {
+  $("#auth-block")?.classList.remove("hidden");
+  $("#app-shell")?.classList.add("hidden");
+}
+
+async function loadProfile() {
+  const { data } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", session.user.id)
+    .single();
+
+  profile = data ?? { is_admin: false };
+}
+
+async function loadAccessAndTabs() {
+  allowedTabs = new Set([...BASE_TABS]);
+  const { data: accessRows, error } = await supabase
+    .from("tab_access")
+    .select("tab_name")
+    .eq("user_id", session?.user?.id);
+
+if (!error && accessRows?.length) {
+  accessRows.forEach(r => allowedTabs.add(r.tab_name));
+}
+
+  if (profile?.is_admin) allowedTabs.add("admin");
+
+  $$("[data-tab]").forEach((btn) =>
+    btn.classList.toggle("hidden", !allowedTabs.has(btn.dataset.tab))
+  );
+}
+
+function showTab(tab) {
+  if (!allowedTabs.has(tab)) return;
+  $$("[data-tab]").forEach((b) =>
+    b.classList.toggle("active", b.dataset.tab === tab)
+  );
+  $$(".tab-view").forEach((v) =>
+    v.classList.toggle("hidden", v.id !== `tab-${tab}`)
+  );
+}
+
+async function loadStores() {
+  const sel = $("#storeSelect");
+  if (!sel) return;
+  sel.length = 1;
+
+  const { data } = await supabase
+    .from("stores")
+    .select("store_id, name")
+    .order("store_id");
+
+  data?.forEach((s) => {
+    const o = document.createElement("option");
+    o.value = s.store_id;
+    o.textContent = `${s.store_id} — ${s.name}`;
+    sel.appendChild(o);
+  });
+
+  if (!currentStoreId && data?.length) {
+    currentStoreId = data[0].store_id;
+    sel.value = currentStoreId;
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
-  setupNav();
-  bindGlobalButtons();
+  $("#btn-signin")?.addEventListener("click", handleSignIn);
+  $("#btn-signout")?.addEventListener("click", handleSignOut);
+  $$("[data-tab]").forEach((b) =>
+    b.addEventListener("click", () => showTab(b.dataset.tab))
+  );
   initAuth();
 });
 
+/* ==== END PART 1 ==== */
+/* =========================================================
+   app_final_part02_of_10.txt
+   PART 2/10 — Monthly Goals: load, save, lock/unlock
+   ========================================================= */
+
 // =====================
-//  AUTH
+// MONTH HELPERS
 // =====================
-async function initAuth() {
-  const { data } = await supabase.auth.getSession();
-  session = data.session || null;
-  updateAuthUI();
+function getSelectedMonthValue() {
+  const input = document.querySelector("#monthInput");
+  if (!input || !input.value) return null;
 
-  supabase.auth.onAuthStateChange((_event, sess) => {
-    session = sess;
-    updateAuthUI();
-    if (sess) {
-      loadProfileAndBoot();
-    } else {
-      profile = null;
-      allowedTabs = new Set(["home", "sales"]);
-      routeTo("home");
-    }
-  });
+  // Accept "YYYY-MM" or "YYYY-MM-DD"
+  const m = input.value.match(/^(\d{4})-(\d{2})/);
+  if (!m) return null;
 
-  if (session) {
-    await loadProfileAndBoot();
-  } else {
-    routeTo("home");
-  }
+  return `${m[1]}-${m[2]}`;
 }
-
-function bindGlobalButtons() {
-  $("#btn-signin")?.addEventListener("click", async () => {
-    const email = prompt("Email:");
-    const password = prompt("Password:");
-    if (!email || !password) return;
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setStatus(`Sign-in error: ${error.message}`);
-      return;
-    }
-    session = data.session;
-    updateAuthUI();
-    await loadProfileAndBoot();
+function setMonthlyUIState(locked) {
+  monthlyLocked = !!locked;
+  const fields = [
+    "#monthlySalesGoal",
+    "#monthlyTxnGoal"
+  ];
+  fields.forEach(sel => {
+    const el = document.querySelector(sel);
+    if (el) el.disabled = monthlyLocked;
   });
 
-  $("#btn-signout")?.addEventListener("click", async () => {
-    await supabase.auth.signOut();
-    session = null;
-    updateAuthUI();
-    routeTo("home");
-  });
-
-  $("#btn-close-modal")?.addEventListener("click", () => {
-    $("#dayModal")?.classList.add("hidden");
-  });
-}
-
-function updateAuthUI() {
-  const signedIn = !!session;
-  $("#btn-signin")?.classList.toggle("hidden", signedIn);
-  $("#btn-signout")?.classList.toggle("hidden", !signedIn);
-  $("#whoami").textContent = signedIn ? session.user.email : "";
-  if (!signedIn) {
-    setStatus("Not signed in.");
-  }
-}
-
-async function loadProfileAndBoot() {
-  if (!session) return;
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id,email,is_admin")
-    .eq("id", session.user.id)
-    .maybeSingle();
-
-  if (error) {
-    setStatus(`Profile error: ${error.message}`);
-    profile = null;
-  } else if (data) {
-    profile = data;
-  } else {
-    profile = { id: session.user.id, email: session.user.email, is_admin: false };
-  }
-
-  await loadTabPermissions();
-  await populateStores();
-  wireSalesPage();
-  wireAdminPage();
-  wireDeptWalkPage();
-
-  routeTo("sales");
+  const saveBtn = document.querySelector("#saveMonthlyBtn");
+  const unlockBtn = document.querySelector("#unlockMonthlyBtn");
+  if (saveBtn) saveBtn.disabled = monthlyLocked;
+  if (unlockBtn) unlockBtn.classList.toggle("hidden", !monthlyLocked);
 }
 
 // =====================
-//  NAV / ROUTING
+// LOAD MONTHLY GOALS
 // =====================
-function setupNav() {
-  $$(".nav-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const route = btn.getAttribute("data-route");
-      if (route) routeTo(route);
-    });
-  });
-}
-
-async function loadTabPermissions() {
-  allowedTabs = new Set(ALWAYS_TABS);
-  if (profile?.is_admin) {
-    allowedTabs.add("admin");
-  }
-  applyTabVisibility();
-}
-
-function applyTabVisibility() {
-  $$(".nav-btn").forEach((btn) => {
-    const route = btn.getAttribute("data-route");
-    if (!route) return;
-    if (route === "admin") {
-      btn.classList.toggle("hidden", !profile?.is_admin);
-      return;
-    }
-  });
-}
-
-function routeTo(route) {
-  if (route === "admin" && !profile?.is_admin) {
-    setStatus("Admin only.");
-    route = "home";
-  }
-
-  $$(".nav-btn").forEach((btn) => {
-    const r = btn.getAttribute("data-route");
-    btn.classList.toggle("active", r === route);
-  });
-
-  $$(".page").forEach((pg) => {
-    pg.classList.add("hidden");
-  });
-
-  const pageEl = $(`#page-${route}`);
-  if (pageEl) {
-    pageEl.classList.remove("hidden");
-  } else {
-    $("#page-home")?.classList.remove("hidden");
-  }
-}
-
-// =====================
-//  STATUS
-// =====================
-function setStatus(msg) {
-  const el = $("#status");
-  if (el) el.textContent = msg || "";
-}
-
-// =====================
-//  STORES
-// =====================
-// Uses table "stores" with columns "id" and "name"
-async function populateStores() {
-  const { data, error } = await supabase
-    .from("stores")
-    .select("id, name")
-    .order("id", { ascending: true });
-
-  if (error) {
-    setStatus(`Store load error: ${error.message}`);
-    console.error("Store load error", error);
-    return;
-  }
-
-  const storeSelects = ["#storeSelect", "#dw-store", "#admin-store"];
-  storeSelects.forEach((sel) => {
-    const s = $(sel);
-    if (!s) return;
-    s.innerHTML = "";
-    data.forEach((row) => {
-      const idVal = row.id;
-      const nameVal = row.name;
-      const opt = document.createElement("option");
-      opt.value = idVal;
-      opt.textContent = nameVal ? `${idVal} — ${nameVal}` : String(idVal);
-      s.appendChild(opt);
-    });
-  });
-
-  if (data.length > 0) {
-    currentStoreId = data[0].id;
-  }
-}
-
-// =====================
-//  SALES PAGE
-// =====================
-function wireSalesPage() {
-  const now = new Date();
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const mInput = $("#monthInput");
-  if (mInput && !mInput.value) mInput.value = ym;
-  currentMonth = mInput?.value || ym;
-
-  buildDowRow();
-
-  $("#btn-load")?.addEventListener("click", () => {
-    const storeId = $("#storeSelect")?.value;
-    const monthVal = $("#monthInput")?.value;
-    if (!storeId || !monthVal) {
-      setStatus("Select store and month.");
-      return;
-    }
-    currentStoreId = storeId;
-    currentMonth = monthVal;
-    loadMonth(storeId, monthVal);
-  });
-
-  $("#monthInput")?.addEventListener("change", () => {
-    currentMonth = $("#monthInput").value;
-    if (currentStoreId && currentMonth) {
-      loadMonth(currentStoreId, currentMonth);
-    }
-  });
-
-  $("#storeSelect")?.addEventListener("change", () => {
-    currentStoreId = $("#storeSelect").value;
-    if (currentStoreId && currentMonth) {
-      loadMonth(currentStoreId, currentMonth);
-    }
-  });
-
-  $("#btn-apply-dow")?.addEventListener("click", () => {
-    applyDowWeightsToMonth();
-  });
-
-  $("#btn-reset-dow")?.addEventListener("click", async () => {
-    for (let i = 0; i < 7; i++) {
-      const inp = document.getElementById(`dow-weight-${i}`);
-      if (inp) inp.value = "1";
-    }
-    $("#dow-status").textContent = "Weights reset to equal. Applying…";
-    await applyDowWeightsToMonth();
-  });
-
-  $("#btn-suggest-dow")?.addEventListener("click", async () => {
-    await suggestDowFromHistory();
-  });
-
-  $("#btnSaveModal")?.addEventListener("click", async () => {
-    await saveDayActualsFromModal();
-  });
-
-  if (currentStoreId && currentMonth) {
-    loadMonth(currentStoreId, currentMonth);
-  }
-}
-
-async function loadMonth(storeId, yyyyMM) {
-  if (!storeId || !yyyyMM) return;
-
-  setStatus("Loading forecast data…");
-
-  try {
-    await fetch(`${SUPABASE_URL}/functions/v1/build-forecast`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ storeId, month: yyyyMM }),
-    }).catch(() => {});
-  } catch (e) {
-    // ignore network failure for edge function
-  }
-
-  const [yearStr, monthStr] = yyyyMM.split("-");
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  const firstDay = `${yearStr}-${monthStr}-01`;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  const nextYear = month === 12 ? year + 1 : year;
-  const nextMonthStr = String(nextMonth).padStart(2, "0");
-  const firstOfNext = `${nextYear}-${nextMonthStr}-01`;
+async function loadMonthlyGoals(storeId, monthVal) {
+  const status = document.querySelector("#sales-status");
+  if (status) status.textContent = "Loading monthly goals…";
 
   const { data, error } = await supabase
-    .from("forecast_daily")
-    .select("*")
-    .eq("store_id", storeId)
-    .gte("date", firstDay)
-    .lt("date", firstOfNext)
-    .order("date", { ascending: true });
-
-  if (error) {
-    setStatus(`Error loading forecast_daily: ${error.message}`);
-    return;
-  }
-
-  const rows = data || [];
-  renderSummary(rows);
-  renderCalendar(yyyyMM, rows);
-  updateDowHeaderFromRows(rows);
-  setStatus("Month loaded.");
-}
-
-function renderSummary(rows) {
-  const totalGoal = rows.reduce((sum, r) => sum + Number(r.sales_goal || 0), 0);
-  const totalActual = rows.reduce((sum, r) => sum + Number(r.sales_actual || 0), 0);
-  const totalTxnGoal = rows.reduce((sum, r) => sum + Number(r.txn_goal || 0), 0);
-  const totalTxnActual = rows.reduce((sum, r) => sum + Number(r.txn_actual || 0), 0);
-
-  $("#summary-sales").textContent = `${fmtMoney(totalActual)} / ${fmtMoney(totalGoal)}`;
-  $("#summary-txns").textContent = `${fmtInt(totalTxnActual)} / ${fmtInt(totalTxnGoal)}`;
-  const pct = totalGoal > 0 ? (totalActual / totalGoal) * 100 : 0;
-  $("#summary-progress").textContent = totalGoal ? `${pct.toFixed(2)}%` : "–";
-}
-
-function renderCalendar(yyyyMM, rows) {
-  const cal = $("#calendar");
-  if (!cal) return;
-  cal.innerHTML = "";
-
-  const monthStart = new Date(`${yyyyMM}-01T00:00:00`);
-  const firstDow = monthStart.getDay();
-  const daysInMonth = new Date(
-    monthStart.getFullYear(),
-    monthStart.getMonth() + 1,
-    0
-  ).getDate();
-
-  for (let i = 0; i < firstDow; i++) {
-    const blank = document.createElement("div");
-    blank.className = "day-cell";
-    cal.appendChild(blank);
-  }
-
-  const today = new Date();
-  const todayKey = today.toISOString().slice(0, 10);
-
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dateStr = `${yyyyMM}-${String(day).padStart(2, "0")}`;
-    const row = rows.find((r) => r.date === dateStr) || {};
-    const cell = document.createElement("div");
-    cell.className = "day-cell";
-
-    const isPast = new Date(dateStr) < new Date(todayKey);
-    cell.classList.add(isPast ? "day-past" : "day-future");
-
-    const gSales = Number(row.sales_goal || 0);
-    const aSales = Number(row.sales_actual || 0);
-    const gTxn = Number(row.txn_goal || 0);
-    const aTxn = Number(row.txn_actual || 0);
-    const gAtv = Number(row.atv_goal || 0);
-    const aAtv = Number(row.atv_actual || 0);
-
-    const showSales = isPast ? aSales : gSales;
-    const showTxn = isPast ? aTxn : gTxn;
-    const showAtv = isPast ? aAtv : gAtv;
-
-    const pct = gSales > 0 && isPast ? (aSales / gSales) * 100 : 0;
-
-    if (isPast && gSales > 0) {
-      cell.classList.add(pct >= 100 ? "day-hit" : "day-miss");
-    }
-
-    cell.innerHTML = `
-      <div class="day-cell-header">
-        <span class="day-number">${String(day).padStart(2, "0")}</span>
-        <button type="button" class="pill small">Details</button>
-      </div>
-      <div class="day-sales">${fmtMoney(showSales)}</div>
-      <div class="day-row">
-        <span class="label">Txn</span>
-        <span>${fmtInt(showTxn)}</span>
-      </div>
-      <div class="day-row">
-        <span class="label">ATV</span>
-        <span>${fmtMoney(showAtv)}</span>
-      </div>
-      <div class="day-pct ${pct >= 100 ? "ok" : "bad"}">
-        ${isPast && gSales > 0 ? pct.toFixed(1) + "%" : "&nbsp;"}
-      </div>
-    `;
-
-    const btn = cell.querySelector("button");
-    btn.addEventListener("click", () => openDayModal(dateStr, row));
-    cal.appendChild(cell);
-  }
-}
-
-// =====================
-//  DAY MODAL
-// =====================
-let modalDate = null;
-let modalRow = null;
-
-function openDayModal(dateStr, row) {
-  modalDate = dateStr;
-  modalRow = row || {};
-  const isAdmin = !!(profile && profile.is_admin);
-
-  $("#modalTitle").textContent = `Details – ${dateStr}`;
-  const container = $("#modal-body");
-  if (!container) return;
-
-  const gSales = Number(row.sales_goal || 0);
-  const gTxn = Number(row.txn_goal || 0);
-  const gAtv =
-    gTxn > 0 ? Number((gSales / gTxn).toFixed(2)) : Number(row.atv_goal || 0);
-
-  const aSales = Number(row.sales_actual || 0);
-  const aTxn = Number(row.txn_actual || 0);
-  const aAtv =
-    aTxn > 0 ? Number((aSales / aTxn).toFixed(2)) : Number(row.atv_actual || 0);
-
-  container.innerHTML = `
-    <div class="day-modal-grid">
-      <div class="day-modal-col">
-        <h4 class="day-modal-heading">This year</h4>
-
-        <div class="field">
-          <label for="ty-sales-goal">Sales Goal</label>
-          ${
-            isAdmin
-              ? `<input type="number" id="ty-sales-goal" value="${gSales || ""}" step="0.01" />`
-              : `<div class="field-readonly">${fmtMoney(gSales)}</div>`
-          }
-        </div>
-
-        <div class="field">
-          <label for="ty-sales-actual">Sales Actual</label>
-          <input type="number" id="ty-sales-actual" value="${aSales || ""}" step="0.01" />
-        </div>
-
-        <div class="field">
-          <label for="ty-txn-goal">Txn Goal</label>
-          ${
-            isAdmin
-              ? `<input type="number" id="ty-txn-goal" value="${aTxn ? gTxn : gTxn || ""}" step="1" />`
-              : `<div class="field-readonly">${fmtInt(gTxn)}</div>`
-          }
-        </div>
-
-        <div class="field">
-          <label for="ty-txn-actual">Txn Actual</label>
-          <input type="number" id="ty-txn-actual" value="${aTxn || ""}" step="1" />
-        </div>
-
-        <div class="field">
-          <label for="ty-atv-goal">ATV Goal</label>
-          <input type="number" id="ty-atv-goal" value="${gAtv || ""}" step="0.01" readonly />
-        </div>
-
-        <div class="field">
-          <label for="ty-atv-actual">ATV Actual</label>
-          <input type="number" id="ty-atv-actual" value="${aAtv || ""}" step="0.01" readonly />
-        </div>
-      </div>
-
-      <div class="day-modal-col">
-        <h4 class="day-modal-heading">Last year</h4>
-
-        <div class="field">
-          <label>Sales Goal</label>
-          <div id="ly-sales-goal" class="field-readonly">–</div>
-        </div>
-
-        <div class="field">
-          <label>Sales Actual</label>
-          <div id="ly-sales-actual" class="field-readonly">–</div>
-        </div>
-
-        <div class="field">
-          <label>Txn Goal</label>
-          <div id="ly-txn-goal" class="field-readonly">–</div>
-        </div>
-
-        <div class="field">
-          <label>Txn Actual</label>
-          <div id="ly-txn-actual" class="field-readonly">–</div>
-        </div>
-
-        <div class="field">
-          <label>ATV Goal</label>
-          <div id="ly-atv-goal" class="field-readonly">–</div>
-        </div>
-
-        <div class="field">
-          <label>ATV Actual</label>
-          <div id="ly-atv-actual" class="field-readonly">–</div>
-        </div>
-      </div>
-    </div>
-  `;
-
-  const salesGoalInput = $("#ty-sales-goal");
-  const txnGoalInput = $("#ty-txn-goal");
-  const atvGoalInput = $("#ty-atv-goal");
-  const salesActInput = $("#ty-sales-actual");
-  const txnActInput = $("#ty-txn-actual");
-  const atvActInput = $("#ty-atv-actual");
-
-  function recalcAtvGoal() {
-    const s = Number(salesGoalInput?.value || 0);
-    const t = Number(txnGoalInput?.value || 0);
-    if (t > 0) {
-      atvGoalInput.value = (s / t).toFixed(2);
-    } else {
-      atvGoalInput.value = "";
-    }
-  }
-
-  function recalcAtvActual() {
-    const s = Number(salesActInput?.value || 0);
-    const t = Number(txnActInput?.value || 0);
-    if (t > 0) {
-      atvActInput.value = (s / t).toFixed(2);
-    } else {
-      atvActInput.value = "";
-    }
-  }
-
-  if (salesGoalInput && txnGoalInput && atvGoalInput) {
-    salesGoalInput.addEventListener("input", recalcAtvGoal);
-    txnGoalInput.addEventListener("input", recalcAtvGoal);
-  }
-  if (salesActInput && txnActInput && atvActInput) {
-    salesActInput.addEventListener("input", recalcAtvActual);
-    txnActInput.addEventListener("input", recalcAtvActual);
-  }
-
-  $("#dayModal").classList.remove("hidden");
-
-  loadPriorYearForDay(dateStr);
-}
-
-async function loadPriorYearForDay(dateStr) {
-  try {
-    if (!currentStoreId) return;
-    const dt = new Date(`${dateStr}T00:00:00`);
-    const priorYear = dt.getFullYear() - 1;
-    const priorDateStr = `${priorYear}-${String(dt.getMonth() + 1).padStart(
-      2,
-      "0"
-    )}-${String(dt.getDate()).padStart(2, "0")}`;
-
-    const { data: lyForecast, error: lyFErr } = await supabase
-      .from("forecast_daily")
-      .select("sales_goal, txn_goal, atv_goal, sales_actual, txn_actual, atv_actual")
-      .eq("store_id", currentStoreId)
-      .eq("date", priorDateStr)
-      .maybeSingle();
-
-    if (!lyFErr && lyForecast) {
-      if ($("#ly-sales-goal")) $("#ly-sales-goal").textContent = fmtMoney(lyForecast.sales_goal);
-      if ($("#ly-txn-goal")) $("#ly-txn-goal").textContent = fmtInt(lyForecast.txn_goal);
-      if ($("#ly-atv-goal"))
-        $("#ly-atv-goal").textContent =
-          lyForecast.atv_goal != null ? fmtMoney(lyForecast.atv_goal) : "–";
-
-      if ($("#ly-sales-actual"))
-        $("#ly-sales-actual").textContent = fmtMoney(lyForecast.sales_actual);
-      if ($("#ly-txn-actual"))
-        $("#ly-txn-actual").textContent = fmtInt(lyForecast.txn_actual);
-
-      const lyAtvActual =
-        lyForecast.atv_actual != null && lyForecast.txn_actual
-          ? lyForecast.atv_actual
-          : lyForecast.sales_actual && lyForecast.txn_actual
-          ? lyForecast.sales_actual / lyForecast.txn_actual
-          : null;
-      if ($("#ly-atv-actual"))
-        $("#ly-atv-actual").textContent =
-          lyAtvActual != null ? fmtMoney(lyAtvActual) : "–";
-    }
-
-    const { data: hist, error: histErr } = await supabase
-      .from("historical_sales")
-      .select("date, net_sales")
-      .eq("store_id", currentStoreId)
-      .eq("date", priorDateStr)
-      .maybeSingle();
-
-    if (!histErr && hist && $("#ly-sales-actual")) {
-      $("#ly-sales-actual").textContent = fmtMoney(hist.net_sales);
-    }
-  } catch (e) {
-    console.error("Error loading prior-year daily values", e);
-  }
-}
-
-async function saveDayActualsFromModal() {
-  if (!modalDate || !currentStoreId) return;
-  const isAdmin = !!(profile && profile.is_admin);
-
-  let gSales = Number(modalRow.sales_goal || 0);
-  let gTxn = Number(modalRow.txn_goal || 0);
-
-  if (isAdmin) {
-    gSales = Number($("#ty-sales-goal")?.value || 0) || 0;
-    gTxn = Number($("#ty-txn-goal")?.value || 0) || 0;
-  }
-
-  let gAtv = 0;
-  if (gTxn > 0) {
-    gAtv = Number((gSales / gTxn).toFixed(2));
-  }
-
-  const salesInput = $("#ty-sales-actual");
-  const txnInput = $("#ty-txn-actual");
-
-  const sAct =
-    salesInput && salesInput.value !== "" ? Number(salesInput.value) : null;
-  const tAct =
-    txnInput && txnInput.value !== "" ? Number(txnInput.value) : null;
-
-  let aAct = null;
-  if (sAct != null && tAct) {
-    aAct = Number((sAct / tAct).toFixed(2));
-  }
-
-  const updatePayload = {
-    sales_actual: sAct,
-    txn_actual: tAct,
-    atv_actual: aAct,
-  };
-
-  if (isAdmin) {
-    updatePayload.sales_goal = gSales;
-    updatePayload.txn_goal = gTxn;
-    updatePayload.atv_goal = gAtv;
-  }
-
-  const rowId = modalRow?.id;
-  let error;
-
-  if (rowId) {
-    ({ error } = await supabase
-      .from("forecast_daily")
-      .update(updatePayload)
-      .eq("id", rowId));
-  } else {
-    const insertPayload = {
-      store_id: currentStoreId,
-      date: modalDate,
-      ...updatePayload,
-    };
-    ({ error } = await supabase.from("forecast_daily").insert(insertPayload));
-  }
-
-  if (error) {
-    setStatus(`Error saving day: ${error.message}`);
-  } else {
-    setStatus("Day saved.");
-  }
-
-  $("#dayModal").classList.add("hidden");
-  if (currentStoreId && currentMonth) {
-    loadMonth(currentStoreId, currentMonth);
-  }
-}
-
-// =====================
-//  DOW WEIGHTS
-// =====================
-function getMonthMeta(yyyyMM) {
-  const [y, m] = yyyyMM.split("-");
-  const year = Number(y);
-  const month = Number(m);
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const days = [];
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = `${yyyyMM}-${String(d).padStart(2, "0")}`;
-    const dt = new Date(`${dateStr}T00:00:00`);
-    days.push({
-      date: dateStr,
-      dayNum: d,
-      dow: dt.getDay(),
-    });
-  }
-  return { daysInMonth, days };
-}
-
-function buildDowRow() {
-  const rowEl = $("#dow-weights-row");
-  if (!rowEl) return;
-  if (rowEl.childElementCount > 0) return;
-
-  const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  let html = "";
-  for (let i = 0; i < 7; i++) {
-    html += `
-      <div class="dow-cell">
-        <div class="dow-cell-header">
-          <span class="dow-name">${labels[i]}</span>
-          <span class="dow-current" id="dow-pct-${i}">–</span>
-        </div>
-        <div class="dow-input-row">
-          <input type="number" step="0.1" id="dow-weight-${i}" value="1" />
-          <span class="dow-unit">weight</span>
-        </div>
-      </div>
-    `;
-  }
-  rowEl.innerHTML = html;
-}
-
-function updateDowHeaderFromRows(rows) {
-  const totalsByDow = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
-  let total = 0;
-  rows.forEach((r) => {
-    const dt = new Date(`${r.date}T00:00:00`);
-    const dow = dt.getDay();
-    const goal = Number(r.sales_goal || 0);
-    totalsByDow[dow] += goal;
-    total += goal;
-  });
-
-  for (let i = 0; i < 7; i++) {
-    const span = document.getElementById(`dow-pct-${i}`);
-    if (!span) continue;
-    if (!total) {
-      span.textContent = "–";
-    } else {
-      const pct = (totalsByDow[i] / total) * 100;
-      span.textContent = `${pct.toFixed(1)}%`;
-    }
-  }
-}
-
-function computeSuggestions(yyyyMM, monthlySales, monthlyTxn, dowWeights) {
-  const { days } = getMonthMeta(yyyyMM);
-
-  if (!monthlySales && !monthlyTxn) {
-    const res = {};
-    days.forEach((d) => {
-      res[d.date] = { sales: 0, txn: 0, share: 0 };
-    });
-    return res;
-  }
-
-  let totalWeight = 0;
-  const weightByDate = {};
-  days.forEach((d) => {
-    const w = Number(dowWeights[d.dow] || 1) || 1;
-    weightByDate[d.date] = w;
-    totalWeight += w;
-  });
-  if (totalWeight <= 0) totalWeight = days.length;
-
-  const raw = [];
-  days.forEach((d) => {
-    const w = weightByDate[d.date];
-    const share = w / totalWeight;
-    const s = monthlySales ? monthlySales * share : 0;
-    const t = monthlyTxn ? monthlyTxn * share : 0;
-    raw.push({
-      date: d.date,
-      dow: d.dow,
-      dayNum: d.dayNum,
-      share,
-      salesRaw: s,
-      txnRaw: t,
-    });
-  });
-
-  let salesRoundedTotal = 0;
-  let txnRoundedTotal = 0;
-  raw.forEach((r) => {
-    r.sales = Math.round(r.salesRaw * 100) / 100;
-    r.txn = Math.round(r.txnRaw);
-    salesRoundedTotal += r.sales;
-    txnRoundedTotal += r.txn;
-  });
-
-  const salesDelta = (monthlySales || 0) - salesRoundedTotal;
-  const txnDelta = (monthlyTxn || 0) - txnRoundedTotal;
-
-  function distributeSalesDelta(delta) {
-    let remaining = Math.round(delta * 100);
-    const sign = remaining >= 0 ? 1 : -1;
-    remaining = Math.abs(remaining);
-    let idx = 0;
-    while (remaining > 0 && raw.length > 0) {
-      raw[idx].sales += sign * 0.01;
-      remaining -= 1;
-      idx = (idx + 1) % raw.length;
-    }
-  }
-
-  function distributeTxnDelta(delta) {
-    let remaining = delta;
-    const sign = remaining >= 0 ? 1 : -1;
-    remaining = Math.abs(remaining);
-    let idx = 0;
-    while (remaining > 0 && raw.length > 0) {
-      raw[idx].txn += sign * 1;
-      remaining -= 1;
-      idx = (idx + 1) % raw.length;
-    }
-  }
-
-  if (Math.abs(salesDelta) > 0.0001) distributeSalesDelta(salesDelta);
-  if (Math.abs(txnDelta) > 0.5) distributeTxnDelta(txnDelta);
-
-  const result = {};
-  raw.forEach((r) => {
-    result[r.date] = {
-      sales: Math.round(r.sales * 100) / 100,
-      txn: r.txn,
-      share: Math.round(r.share * 1000000) / 1000000,
-    };
-  });
-  return result;
-}
-
-async function applyDowWeightsToMonth() {
-  if (!profile?.is_admin) {
-    $("#dow-status").textContent = "Only admins can push daily goals.";
-    return;
-  }
-
-  const storeId = $("#storeSelect")?.value;
-  const monthVal = $("#monthInput")?.value;
-  if (!storeId || !monthVal) {
-    $("#dow-status").textContent = "Select store and month first.";
-    return;
-  }
-
-  const { data: mg, error: mgErr } = await supabase
     .from("monthly_goals")
-    .select("store_id, month, sales_goal, txn_goal")
+    .select("sales_goal, txn_goal, locked")
     .eq("store_id", storeId)
     .eq("month", monthVal)
     .maybeSingle();
 
-  if (mgErr) {
-    $("#dow-status").textContent = `Error loading monthly goals: ${mgErr.message}`;
-    return;
-  }
-  if (!mg) {
-    $("#dow-status").textContent = "No monthly goals set for this store/month.";
+  if (error) {
+    if (status) status.textContent = `Error loading monthly goals: ${error.message}`;
     return;
   }
 
-  const monthlySales = Number(mg.sales_goal || 0);
-  const monthlyTxn = Number(mg.txn_goal || 0);
-  if (!monthlySales && !monthlyTxn) {
-    $("#dow-status").textContent = "Monthly goals are zero; nothing to allocate.";
-    return;
-  }
+  document.querySelector("#monthlySalesGoal").value = data?.sales_goal ?? "";
+  document.querySelector("#monthlyTxnGoal").value = data?.txn_goal ?? "";
 
-  const dowWeights = {};
-  for (let i = 0; i < 7; i++) {
-    const inp = document.getElementById(`dow-weight-${i}`);
-    dowWeights[i] = inp ? Number(inp.value || 1) || 1 : 1;
-  }
+  setMonthlyUIState(!!data?.locked);
+  if (status) status.textContent = "";
+}
 
-  const suggestions = computeSuggestions(monthVal, monthlySales, monthlyTxn, dowWeights);
-  const { days } = getMonthMeta(monthVal);
+// =====================
+// SAVE + LOCK MONTHLY
+// =====================
+async function saveMonthlyGoals() {
+  const storeId = document.querySelector("#storeSelect")?.value;
+  const monthVal = getSelectedMonthValue();
+  if (!storeId || !monthVal) return alert("Select store and month first.");
 
-  const payload = days.map((d) => {
-    const sugg = suggestions[d.date] || { sales: 0, txn: 0, share: 0 };
-    const jsDate = new Date(`${d.date}T00:00:00`);
-    const weekOfMonth = Math.ceil((d.dayNum + jsDate.getDay()) / 7);
-    const weekdayIndex = jsDate.getDay();
+  const salesGoal = document.querySelector("#monthlySalesGoal").value
+    ? Number(document.querySelector("#monthlySalesGoal").value)
+    : null;
+  const txnGoal = document.querySelector("#monthlyTxnGoal").value
+    ? Number(document.querySelector("#monthlyTxnGoal").value)
+    : null;
 
-    let atvGoal = 0;
-    if (sugg.txn > 0) {
-      atvGoal = Number((sugg.sales / sugg.txn).toFixed(2));
-    }
+  const status = document.querySelector("#sales-status");
+  if (status) status.textContent = "Saving and locking monthly goals…";
 
-    return {
+  const { error } = await supabase.from("monthly_goals").upsert(
+    {
       store_id: storeId,
-      date: d.date,
-      sales_goal: sugg.sales,
-      txn_goal: sugg.txn,
-      atv_goal: atvGoal,
-      daily_share: sugg.share,
-      week_of_month: weekOfMonth,
-      weekday_index: weekdayIndex,
-    };
-  });
-
-  $("#dow-status").textContent = "Saving daily goals…";
-
-  const [yearStr, monthStr] = monthVal.split("-");
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  const firstDay = `${yearStr}-${monthStr}-01`;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  const nextYear = month === 12 ? year + 1 : year;
-  const nextMonthStr = String(nextMonth).padStart(2, "0");
-  const firstOfNext = `${nextYear}-${nextMonthStr}-01`;
-
-  const { error: delErr } = await supabase
-    .from("forecast_daily")
-    .delete()
-    .eq("store_id", storeId)
-    .gte("date", firstDay)
-    .lt("date", firstOfNext);
-
-  if (delErr) {
-    console.error("Error deleting existing daily goals", delErr);
-    $("#dow-status").textContent = `Error clearing old daily goals: ${delErr.message}`;
-    return;
-  }
-
-  const { error } = await supabase.from("forecast_daily").insert(payload);
+      month: monthVal,
+      sales_goal: salesGoal,
+      txn_goal: txnGoal,
+      locked: true
+    },
+    { onConflict: "store_id,month" }
+  );
 
   if (error) {
-    console.error("Error saving daily goals from DOW weights", error);
-    $("#dow-status").textContent = `Error saving: ${error.message}`;
+    if (status) status.textContent = `Error saving: ${error.message}`;
     return;
   }
 
-  $("#dow-status").textContent = "Daily goals updated from day-of-week weights.";
-  if (storeId === currentStoreId && monthVal === currentMonth) {
-    await loadMonth(storeId, monthVal);
+  setMonthlyUIState(true);
+  if (status) status.textContent = "Monthly goals saved and locked.";
+}
+
+// =====================
+// UNLOCK MONTHLY (ADMIN)
+// =====================
+async function unlockMonthlyGoals() {
+  if (!profile?.is_admin) {
+    alert("Admin only.");
+    return;
+  }
+
+  const storeId = document.querySelector("#storeSelect")?.value;
+  const monthVal = getSelectedMonthValue();
+  if (!storeId || !monthVal) return;
+
+  const status = document.querySelector("#sales-status");
+  if (status) status.textContent = "Unlocking monthly goals…";
+
+  const { error } = await supabase
+    .from("monthly_goals")
+    .update({ locked: false })
+    .eq("store_id", storeId)
+    .eq("month", monthVal);
+
+  if (error) {
+    if (status) status.textContent = `Error unlocking: ${error.message}`;
+    return;
+  }
+
+  setMonthlyUIState(false);
+  if (status) status.textContent = "Monthly goals unlocked.";
+}
+
+// =====================
+// BIND MONTHLY EVENTS
+// =====================
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelector("#saveMonthlyBtn")
+    ?.addEventListener("click", saveMonthlyGoals);
+  document.querySelector("#unlockMonthlyBtn")
+    ?.addEventListener("click", unlockMonthlyGoals);
+});
+
+/* ==== END PART 2 ==== */
+/* =========================================================
+   app_final_part03_of_10.txt
+   PART 3/10 — Daily load, calendar render hookup, daily lock state
+   ========================================================= */
+
+// =====================
+// DAILY UI STATE
+// =====================
+function setDailyUIState(locked) {
+  dailyLocked = !!locked;
+
+  // Disable DOW inputs + apply/suggest buttons when locked
+  const dowInputs = [
+    "#dow-sun","#dow-mon","#dow-tue","#dow-wed","#dow-thu","#dow-fri","#dow-sat"
+  ];
+  dowInputs.forEach(sel => {
+    const el = document.querySelector(sel);
+    if (el) el.disabled = dailyLocked;
+  });
+
+  const applyBtn = document.querySelector("#applyDowBtn");
+  const suggestBtn = document.querySelector("#suggestDowBtn");
+  const saveDailyBtn = document.querySelector("#saveDailyBtn");
+  const unlockDailyBtn = document.querySelector("#unlockDailyBtn");
+
+  if (applyBtn) applyBtn.disabled = dailyLocked;
+  if (suggestBtn) suggestBtn.disabled = dailyLocked;
+  if (saveDailyBtn) saveDailyBtn.disabled = dailyLocked;
+
+  if (unlockDailyBtn) unlockDailyBtn.classList.toggle("hidden", !dailyLocked);
+
+  // Add a subtle lock indicator (if present in DOM)
+  const lockBadge = document.querySelector("#dailyLockBadge");
+  if (lockBadge) {
+    lockBadge.textContent = dailyLocked ? "🔒 Locked" : "";
+    lockBadge.classList.toggle("hidden", !dailyLocked);
   }
 }
 
-async function suggestDowFromHistory() {
-  const storeId = $("#storeSelect")?.value;
-  const monthVal = $("#monthInput")?.value;
-  if (!storeId || !monthVal) {
-    $("#dow-status").textContent = "Select store and month first.";
-    return;
-  }
+// =====================
+// LOAD DAILY ROWS + LOCK STATE
+// =====================
+async function loadDailyRows(storeId, monthVal) {
+  const status = document.querySelector("#dow-status");
+  if (status) status.textContent = "Loading daily…";
 
-  const [yearStr, monthStr] = monthVal.split("-");
-  const prevYear = Number(yearStr) - 1;
-  if (prevYear < 2000) {
-    $("#dow-status").textContent = "No prior year data available.";
-    return;
-  }
-
-  const start = `${prevYear}-${monthStr}-01`;
-  const daysInPrev = new Date(prevYear, Number(monthStr), 0).getDate();
-  const end = `${prevYear}-${monthStr}-${String(daysInPrev).padStart(2, "0")}`;
+  const start = `${monthVal}-01`;
+  const end = `${monthVal}-31`;
 
   const { data, error } = await supabase
-    .from("historical_sales")
-    .select("date, net_sales")
+    .from("forecast_daily")
+    .select("id,date,sales_goal,txn_goal,atv_goal,sales_actual,txn_actual,atv_actual,daily_share,locked")
+    .eq("store_id", storeId)
+    .gte("date", start)
+    .lte("date", end)
+    .order("date", { ascending: true });
+
+  if (error) {
+    if (status) status.textContent = `Error loading daily: ${error.message}`;
+    return { rows: [], locked: false };
+  }
+
+  // dailyLocked is true if ANY row in month is locked (we lock the plan as a whole)
+  const monthLocked = (data || []).some(r => r.locked === true);
+  setDailyUIState(monthLocked);
+
+  if (status) status.textContent = "";
+  return { rows: data || [], locked: monthLocked };
+}
+
+// =====================
+// LOAD ENTIRE MONTH (monthly + daily + calendar)
+// =====================
+async function loadMonth(storeId, monthVal) {
+  currentStoreId = storeId;
+  currentMonth = monthVal;
+
+  // Monthly first
+  await loadMonthlyGoals(storeId, monthVal);
+
+  // Then daily
+  const { rows } = await loadDailyRows(storeId, monthVal);
+
+  // Render calendar if calendar container exists
+  if (typeof buildCalendar === "function") {
+    buildCalendar(storeId, monthVal, rows);
+  }
+}
+
+// =====================
+// LOAD MONTH BUTTON
+// =====================
+async function handleLoadMonthClick() {
+  const storeId = document.querySelector("#storeSelect")?.value;
+  const monthVal = getSelectedMonthValue();
+  if (!storeId || !monthVal) return alert("Select store and month first.");
+  await loadMonth(storeId, monthVal);
+}
+
+// =====================
+// UNLOCK DAILY (ADMIN)
+// =====================
+async function unlockDailyPlan() {
+  if (!profile?.is_admin) return alert("Admin only.");
+
+  const storeId = document.querySelector("#storeSelect")?.value;
+  const monthVal = getSelectedMonthValue();
+  if (!storeId || !monthVal) return;
+
+  const status = document.querySelector("#dow-status");
+  if (status) status.textContent = "Unlocking daily plan…";
+
+  const start = `${monthVal}-01`;
+  const end = `${monthVal}-31`;
+
+  const { error } = await supabase
+    .from("forecast_daily")
+    .update({ locked: false })
     .eq("store_id", storeId)
     .gte("date", start)
     .lte("date", end);
 
   if (error) {
-    $("#dow-status").textContent = `Error loading history: ${error.message}`;
-    return;
-  }
-  if (!data || data.length === 0) {
-    $("#dow-status").textContent = "No historical data found for prior year.";
+    if (status) status.textContent = `Error unlocking: ${error.message}`;
     return;
   }
 
-  const totals = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
-  const counts = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
-
-  data.forEach((row) => {
-    const dt = new Date(`${row.date}T00:00:00`);
-    const dow = dt.getDay();
-    const s = Number(row.net_sales || 0);
-    totals[dow] += s;
-    counts[dow] += 1;
-  });
-
-  let sumAvgs = 0;
-  let dowCount = 0;
-  const avg = {};
-  for (let i = 0; i < 7; i++) {
-    if (counts[i] > 0) {
-      avg[i] = totals[i] / counts[i];
-      sumAvgs += avg[i];
-      dowCount++;
-    } else {
-      avg[i] = null;
-    }
-  }
-
-  if (dowCount === 0 || sumAvgs === 0) {
-    $("#dow-status").textContent = "Insufficient data to suggest weights.";
-    return;
-  }
-
-  const overallAvg = sumAvgs / dowCount;
-  const weights = {};
-  for (let i = 0; i < 7; i++) {
-    weights[i] = avg[i] != null ? avg[i] / overallAvg : 1;
-  }
-
-  for (let i = 0; i < 7; i++) {
-    const inp = document.getElementById(`dow-weight-${i}`);
-    if (inp) inp.value = weights[i].toFixed(2);
-  }
-
-  $("#dow-status").textContent = "Suggested weights loaded from prior-year history.";
+  setDailyUIState(false);
+  if (status) status.textContent = "Daily plan unlocked.";
 }
 
 // =====================
-//  ADMIN PAGE
+// BIND MONTH LOAD + DAILY UNLOCK
 // =====================
-function wireAdminPage() {
-  $("#btn-admin-load-goals")?.addEventListener("click", async () => {
-    const storeId = $("#admin-store")?.value;
-    const monthVal = $("#admin-month")?.value;
-    if (!storeId || !monthVal) return;
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelector("#loadMonthBtn")
+    ?.addEventListener("click", handleLoadMonthClick);
 
-    const { data, error } = await supabase
-      .from("monthly_goals")
-      .select("sales_goal, txn_goal")
-      .eq("store_id", storeId)
-      .eq("month", monthVal)
-      .maybeSingle();
+  document.querySelector("#unlockDailyBtn")
+    ?.addEventListener("click", unlockDailyPlan);
+});
 
-    if (error) {
-      $("#admin-goals-status").textContent = `Error: ${error.message}`;
-      return;
-    }
-    $("#admin-sales-goal").value = data?.sales_goal ?? "";
-    $("#admin-txn-goal").value = data?.txn_goal ?? "";
-    $("#admin-goals-status").textContent = "Goals loaded.";
-  });
+/* ==== END PART 3 ==== */
+/* =========================================================
+   app_final_part04_of_10.txt
+   PART 4/10 — DOW weights → daily suggestions, save + lock daily plan
+   ========================================================= */
 
-  $("#btn-admin-save-goals")?.addEventListener("click", async () => {
-    const storeId = $("#admin-store")?.value;
-    const monthVal = $("#admin-month")?.value;
-    const sGoal = Number($("#admin-sales-goal")?.value || 0) || 0;
-    const tGoal = Number($("#admin-txn-goal")?.value || 0) || 0;
+// =====================
+// DOW WEIGHTS HELPERS
+// =====================
+function getDowWeights() {
+  return {
+    0: Number(document.querySelector("#dow-sun")?.value || 0),
+    1: Number(document.querySelector("#dow-mon")?.value || 0),
+    2: Number(document.querySelector("#dow-tue")?.value || 0),
+    3: Number(document.querySelector("#dow-wed")?.value || 0),
+    4: Number(document.querySelector("#dow-thu")?.value || 0),
+    5: Number(document.querySelector("#dow-fri")?.value || 0),
+    6: Number(document.querySelector("#dow-sat")?.value || 0)
+  };
+}
 
-    if (!storeId || !monthVal) return;
+function normalizeDowWeights(weights) {
+  const sum = Object.values(weights).reduce((a,b)=>a+b,0);
+  if (sum <= 0) return null;
+  const out = {};
+  for (let i=0;i<7;i++) out[i] = weights[i] / sum;
+  return out;
+}
 
-    const payload = {
+// =====================
+// APPLY DOW WEIGHTS → UPSERT DAILY GOALS
+// =====================
+async function applyDowWeightsToMonth() {
+  if (dailyLocked) return alert("Daily plan is locked. Unlock to modify.");
+
+  const storeId = document.querySelector("#storeSelect")?.value;
+  const monthVal = getSelectedMonthValue();
+  if (!storeId || !monthVal) return alert("Select store and month first.");
+
+  // Require monthly goals exist (saved/locked or saved/unlocked)
+  const { data: mg, error: mgErr } = await supabase
+    .from("monthly_goals")
+    .select("sales_goal, txn_goal, locked")
+    .eq("store_id", storeId)
+    .eq("month", monthVal)
+    .maybeSingle();
+
+  if (mgErr) return alert("Error loading monthly goals: " + mgErr.message);
+  if (!mg || (mg.sales_goal == null && mg.txn_goal == null)) {
+    alert("You must save monthly goals before generating daily breakdown.");
+    return;
+  }
+
+  const monthlySales = Number(mg.sales_goal || 0);
+  const monthlyTxn = Number(mg.txn_goal || 0);
+  if (monthlySales === 0 && monthlyTxn === 0) {
+    alert("Monthly goals are zero. Set monthly goals before generating daily breakdown.");
+    return;
+  }
+
+  const weights = getDowWeights();
+  const norm = normalizeDowWeights(weights);
+  if (!norm) {
+    alert("Day-of-week weights must sum to > 0.");
+    return;
+  }
+
+  const status = document.querySelector("#dow-status");
+  if (status) status.textContent = "Building daily breakdown…";
+
+  const [yearStr, monthStr] = monthVal.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+
+  const lastDay = new Date(year, month, 0);
+  const daysInMonth = lastDay.getDate();
+
+  // Build daily suggestions
+  let runningSales = 0;
+  let runningTxn = 0;
+  const dailyPayload = [];
+
+  for (let day=1; day<=daysInMonth; day++) {
+    const dateObj = new Date(year, month-1, day);
+    const dow = dateObj.getDay();
+    const share = norm[dow];
+
+    const dateStr = `${yearStr}-${monthStr}-${String(day).padStart(2,"0")}`;
+
+    const salesGoal = Math.round(monthlySales * share * 100) / 100;
+    const txnGoal = Math.round(monthlyTxn * share);
+
+    runningSales += salesGoal;
+    runningTxn += txnGoal;
+
+    const atvGoal = txnGoal > 0 ? Number((salesGoal / txnGoal).toFixed(2)) : 0;
+
+    // week_of_month rough calc
+    const weekOfMonth = Math.ceil((day + dateObj.getDay()) / 7);
+    const weekdayIndex = dow;
+
+    dailyPayload.push({
       store_id: storeId,
-      month: monthVal,
-      sales_goal: sGoal,
-      txn_goal: tGoal,
-    };
+      date: dateStr,
+      sales_goal: salesGoal,
+      txn_goal: txnGoal,
+      atv_goal: atvGoal,
+      daily_share: share,
+      week_of_month: weekOfMonth,
+      weekday_index: weekdayIndex,
+      locked: false
+    });
+  }
 
-    await supabase.from("monthly_goals").delete().eq("store_id", storeId).eq("month", monthVal);
-    const { error } = await supabase.from("monthly_goals").insert(payload);
-
-    if (error) {
-      $("#admin-goals-status").textContent = `Error saving goals: ${error.message}`;
-    } else {
-      $("#admin-goals-status").textContent = "Goals saved.";
+  // Fix rounding drift on last day
+  if (daysInMonth > 0) {
+    const salesDiff = Math.round((monthlySales - runningSales) * 100) / 100;
+    const txnDiff = Math.round(monthlyTxn - runningTxn);
+    const lastIdx = dailyPayload.length - 1;
+    if (salesDiff !== 0) dailyPayload[lastIdx].sales_goal = Math.round((dailyPayload[lastIdx].sales_goal + salesDiff) * 100) / 100;
+    if (txnDiff !== 0) dailyPayload[lastIdx].txn_goal = Math.max(0, dailyPayload[lastIdx].txn_goal + txnDiff);
+    if (dailyPayload[lastIdx].txn_goal > 0) {
+      dailyPayload[lastIdx].atv_goal = Number((dailyPayload[lastIdx].sales_goal / dailyPayload[lastIdx].txn_goal).toFixed(2));
     }
-  });
+  }
 
-  // NOTE: monthly goal suggestions (based on history + growth %) can be
-  // added here next; wiring the button now will be safe even if the
-  // corresponding HTML isn't present yet.
+  const { error } = await supabase
+    .from("forecast_daily")
+    .upsert(dailyPayload, { onConflict: "store_id,date" });
+
+  if (error) {
+    if (status) status.textContent = "Error saving daily breakdown: " + error.message;
+    console.error("applyDowWeightsToMonth error:", error);
+    return;
+  }
+
+  if (status) status.textContent = "Daily breakdown updated.";
+  await loadMonth(storeId, monthVal);
 }
 
 // =====================
-//  DEPT WALK (STUB)
+// SAVE + LOCK DAILY PLAN (ADMIN)
 // =====================
-function wireDeptWalkPage() {
-  $("#btn-dw-save")?.addEventListener("click", () => {
-    alert("Dept Walk save is not wired to a table yet. This is a safe placeholder.");
+async function saveAndLockDailyPlan() {
+  if (!profile?.is_admin) return alert("Admin only.");
+  if (dailyLocked) return alert("Daily plan is already locked.");
+
+  const storeId = document.querySelector("#storeSelect")?.value;
+  const monthVal = getSelectedMonthValue();
+  if (!storeId || !monthVal) return alert("Select store and month first.");
+
+  const status = document.querySelector("#dow-status");
+  if (status) status.textContent = "Locking daily plan…";
+
+  const start = `${monthVal}-01`;
+  const end = `${monthVal}-31`;
+
+  const { error } = await supabase
+    .from("forecast_daily")
+    .update({ locked: true })
+    .eq("store_id", storeId)
+    .gte("date", start)
+    .lte("date", end);
+
+  if (error) {
+    if (status) status.textContent = "Error locking daily plan: " + error.message;
+    return;
+  }
+
+  setDailyUIState(true);
+  if (status) status.textContent = "Daily plan saved and locked.";
+}
+
+// =====================
+// OPTIONAL: SUGGEST DOW FROM HISTORY (placeholder hook)
+// =====================
+async function suggestDowFromHistory() {
+  // If you have an RPC, wire it here. This keeps compatibility with your UI.
+  const status = document.querySelector("#dow-status");
+  if (status) status.textContent = "Dow suggestion not configured yet.";
+}
+
+// =====================
+// BIND DOW + DAILY LOCK BUTTONS
+// =====================
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelector("#applyDowBtn")
+    ?.addEventListener("click", applyDowWeightsToMonth);
+
+  document.querySelector("#suggestDowBtn")
+    ?.addEventListener("click", suggestDowFromHistory);
+
+  // Admin "Save Daily Plan" button (locks)
+  document.querySelector("#saveDailyBtn")
+    ?.addEventListener("click", saveAndLockDailyPlan);
+});
+
+/* ==== END PART 4 ==== */
+/* =========================================================
+   app_final_part05_of_10.txt
+   PART 5/10 — Daily Details Modal (TY / LY split) + ATV calc
+   ========================================================= */
+
+// =====================
+// DAY MODAL CREATION
+// =====================
+function ensureDayModal() {
+  let modal = document.querySelector("#dayDetailsModal");
+  if (modal) return modal;
+
+  modal = document.createElement("div");
+  modal.id = "dayDetailsModal";
+  modal.className = "modal-overlay hidden";
+  modal.innerHTML = `
+    <div class="modal">
+      <h2 id="dayModalTitle">Daily Details</h2>
+
+      <div class="modal-body two-col">
+        <div class="col">
+          <h3>This Year</h3>
+
+          <label><span>Sales Goal</span>
+            <input id="dd_sales_goal" type="number" step="0.01" />
+          </label>
+
+          <label><span>Sales Actual</span>
+            <input id="dd_sales_actual" type="number" step="0.01" />
+          </label>
+
+          <label><span>Txn Goal</span>
+            <input id="dd_txn_goal" type="number" />
+          </label>
+
+          <label><span>Txn Actual</span>
+            <input id="dd_txn_actual" type="number" />
+          </label>
+
+          <label><span>ATV Goal</span>
+            <input id="dd_atv_goal" type="number" step="0.01" />
+          </label>
+
+          <label><span>ATV Actual</span>
+            <input id="dd_atv_actual" type="text" disabled />
+          </label>
+        </div>
+
+        <div class="col">
+          <h3>Last Year</h3>
+
+          <label><span>Sales Actual</span>
+            <input id="dd_sales_actual_ly" type="text" disabled />
+          </label>
+
+          <label><span>Txn Actual</span>
+            <input id="dd_txn_actual_ly" type="text" disabled />
+          </label>
+
+          <label><span>ATV Actual</span>
+            <input id="dd_atv_actual_ly" type="text" disabled />
+          </label>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <span id="dayModalStatus" class="modal-status"></span>
+        <button id="saveDayBtn" class="btn-primary" type="button">Save Day</button>
+        <button id="closeDayBtn" class="btn-secondary" type="button">Close</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  document.querySelector("#closeDayBtn").onclick = closeDayModal;
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeDayModal();
+  });
+
+  return modal;
+}
+
+function closeDayModal() {
+  document.querySelector("#dayDetailsModal")?.classList.add("hidden");
+}
+
+// =====================
+// OPEN DAY MODAL
+// =====================
+async function openDayModal(dateStr, row) {
+  ensureDayModal();
+
+  document.querySelector("#dayModalTitle").textContent = dateStr;
+  document.querySelector("#dayModalStatus").textContent = "";
+
+  document.querySelector("#dd_sales_goal").value = row?.sales_goal ?? "";
+  document.querySelector("#dd_sales_actual").value = row?.sales_actual ?? "";
+  document.querySelector("#dd_txn_goal").value = row?.txn_goal ?? "";
+  document.querySelector("#dd_txn_actual").value = row?.txn_actual ?? "";
+  document.querySelector("#dd_atv_goal").value = row?.atv_goal ?? "";
+
+  // ATV actual calculation
+  if (row?.sales_actual != null && row?.txn_actual > 0) {
+    document.querySelector("#dd_atv_actual").value =
+      (row.sales_actual / row.txn_actual).toFixed(2);
+  } else {
+    document.querySelector("#dd_atv_actual").value = "";
+  }
+
+  // Load Last Year actuals
+  const d = new Date(dateStr);
+  d.setFullYear(d.getFullYear() - 1);
+  const lyDate = d.toISOString().slice(0, 10);
+
+  const { data } = await supabase
+    .from("forecast_daily")
+    .select("sales_actual, txn_actual")
+    .eq("store_id", currentStoreId)
+    .eq("date", lyDate)
+    .maybeSingle();
+
+  document.querySelector("#dd_sales_actual_ly").value =
+    data?.sales_actual ?? "—";
+  document.querySelector("#dd_txn_actual_ly").value =
+    data?.txn_actual ?? "—";
+  document.querySelector("#dd_atv_actual_ly").value =
+    data?.sales_actual && data?.txn_actual
+      ? (data.sales_actual / data.txn_actual).toFixed(2)
+      : "—";
+
+  document.querySelector("#saveDayBtn").onclick = () => saveDayEdits(dateStr);
+  document.querySelector("#dayDetailsModal").classList.remove("hidden");
+}
+
+// =====================
+// SAVE DAY EDITS
+// =====================
+async function saveDayEdits(dateStr) {
+  if (dailyLocked) {
+    alert("Daily plan is locked. Unlock to edit.");
+    return;
+  }
+
+  const salesGoal = Number(document.querySelector("#dd_sales_goal").value || 0);
+  const salesActual = Number(document.querySelector("#dd_sales_actual").value || 0);
+  const txnGoal = Number(document.querySelector("#dd_txn_goal").value || 0);
+  const txnActual = Number(document.querySelector("#dd_txn_actual").value || 0);
+  const atvGoal = Number(document.querySelector("#dd_atv_goal").value || 0);
+
+  const atvActual =
+    txnActual > 0 ? Number((salesActual / txnActual).toFixed(2)) : null;
+
+  document.querySelector("#dayModalStatus").textContent = "Saving…";
+
+  const { error } = await supabase.from("forecast_daily").upsert(
+    {
+      store_id: currentStoreId,
+      date: dateStr,
+      sales_goal: salesGoal,
+      sales_actual: salesActual,
+      txn_goal: txnGoal,
+      txn_actual: txnActual,
+      atv_goal: atvGoal,
+      atv_actual: atvActual
+    },
+    { onConflict: "store_id,date" }
+  );
+
+  if (error) {
+    document.querySelector("#dayModalStatus").textContent = error.message;
+    return;
+  }
+
+  document.querySelector("#dayModalStatus").textContent = "Saved.";
+  await loadMonth(currentStoreId, currentMonth);
+}
+
+/* ==== END PART 5 ==== */
+/* =========================================================
+   app_final_part06_of_10.txt
+   PART 6/10 — Calendar click hook + lock enforcement
+   ========================================================= */
+
+// =====================
+// CALENDAR CELL CLICK HOOK
+// =====================
+function attachCalendarHandlers() {
+  const cells = document.querySelectorAll(".calendar-cell[data-date]");
+  cells.forEach((cell) => {
+    cell.onclick = () => {
+      const date = cell.dataset.date;
+      const row = cell._rowData;
+      if (!row) return;
+      openDayModal(date, row);
+    };
   });
 }
+
+// =====================
+// PATCH buildCalendar SAFELY
+// =====================
+//
+// This wraps your existing buildCalendar without rewriting it.
+// It injects row data per cell and enforces lock styling.
+//
+if (typeof buildCalendar === "function") {
+  const _buildCalendar = buildCalendar;
+
+  buildCalendar = function (storeId, monthVal, rows) {
+    // Call original calendar renderer
+    _buildCalendar(storeId, monthVal, rows);
+
+    // Attach row data + lock state (DATE-BASED MAPPING)
+const rowByDate = new Map((rows || []).map(r => [r.date, r]));
+
+const cells = document.querySelectorAll(".calendar-cell[data-date]");
+cells.forEach((cell) => {
+  const date = cell.dataset.date;
+  const row = rowByDate.get(date) || null;
+  cell._rowData = row;
+
+  if (dailyLocked) cell.classList.add("locked");
+  else cell.classList.remove("locked");
+});
+    attachCalendarHandlers();
+  };
+}
+
+/* ==== END PART 6 ==== */
+/* =========================================================
+   app_final_part07_of_10.txt
+   PART 7/10 — Admin: Manage Employees (profiles + tab access)
+   ========================================================= */
+
+/*
+  Manage Employees UI (browser-safe):
+
+  - profiles (id, email, full_name, is_admin)
+  - tab_access (user_id, tab_name)
+
+  NOTE: Inviting/creating users requires Supabase Admin API (service role key),
+  which must NOT be used in the browser. This UI covers managing access for
+  users that already exist in Auth/profiles.
+*/
+
+function adminOnlyGuard() {
+  if (!profile?.is_admin) {
+    alert("Admin only.");
+    return false;
+  }
+  return true;
+}
+
+function adminSetStatus(msg) {
+  const s = document.querySelector("#admin-users-status");
+  if (s) s.textContent = msg || "";
+}
+
+function _el(tag, attrs = {}, children = []) {
+  const n = document.createElement(tag);
+  Object.entries(attrs).forEach(([k, v]) => {
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  });
+  children.forEach((c) => n.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
+  return n;
+}
+
+async function adminLoadUsers() {
+  if (!adminOnlyGuard()) return;
+
+  adminSetStatus("Loading users…");
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id,email,full_name,is_admin")
+    .order("email", { ascending: true });
+
+  if (error) {
+    console.error("adminLoadUsers error:", error);
+    adminSetStatus("Error: " + error.message);
+    return;
+  }
+
+  renderAdminUsersTable(data || []);
+  adminSetStatus("");
+}
+
+function renderAdminUsersTable(users) {
+  const host = document.querySelector("#admin-users-table");
+  if (!host) return;
+
+  host.innerHTML = "";
+  const table = _el("table", { class: "admin-table" });
+  const thead = _el("thead", {}, [
+    _el("tr", {}, [
+      _el("th", {}, ["Email"]),
+      _el("th", {}, ["Name"]),
+      _el("th", {}, ["Admin"]),
+      _el("th", {}, ["Access"]),
+    ]),
+  ]);
+
+  const tbody = _el("tbody");
+
+  users.forEach((u) => {
+    const cb = _el("input", { type: "checkbox" });
+    cb.checked = !!u.is_admin;
+    cb.addEventListener("change", async () => {
+      const ok = confirm(`Set admin=${cb.checked} for ${u.email}?`);
+      if (!ok) {
+        cb.checked = !cb.checked;
+        return;
+      }
+      await adminSetIsAdmin(u.id, cb.checked);
+    });
+
+    const btn = _el(
+      "button",
+      { class: "btn-secondary", type: "button", onclick: () => adminOpenAccessEditor(u) },
+      ["Edit Tabs"]
+    );
+
+    tbody.appendChild(
+      _el("tr", {}, [
+        _el("td", {}, [u.email || "—"]),
+        _el("td", {}, [u.full_name || "—"]),
+        _el("td", {}, [cb]),
+        _el("td", {}, [btn]),
+      ])
+    );
+  });
+
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  host.appendChild(table);
+}
+
+async function adminSetIsAdmin(userId, isAdmin) {
+  adminSetStatus("Saving…");
+  const { error } = await supabase.from("profiles").update({ is_admin: !!isAdmin }).eq("id", userId);
+  if (error) {
+    console.error("adminSetIsAdmin error:", error);
+    alert("Error saving admin flag: " + error.message);
+  }
+  adminSetStatus("");
+}
+
+function ensureAccessModal() {
+  let modal = document.querySelector("#adminAccessModal");
+  if (modal) return modal;
+
+  modal = _el("div", { id: "adminAccessModal", class: "modal-overlay hidden" }, [
+    _el("div", { class: "modal" }, [
+      _el("h2", { id: "adminAccessTitle" }, ["Edit User Access"]),
+      _el("div", { class: "modal-body" }, [_el("div", { id: "adminAccessBody" }, ["Loading…"])]),
+      _el("div", { class: "modal-footer" }, [
+        _el("span", { id: "adminAccessStatus", class: "modal-status" }, [""]),
+        _el("button", { id: "adminAccessCloseBtn", class: "btn-secondary", type: "button" }, ["Close"]),
+      ]),
+    ]),
+  ]);
+
+  document.body.appendChild(modal);
+  document.querySelector("#adminAccessCloseBtn").onclick = () => modal.classList.add("hidden");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+
+  return modal;
+}
+
+async function adminOpenAccessEditor(user) {
+  if (!adminOnlyGuard()) return;
+
+  const modal = ensureAccessModal();
+  const title = document.querySelector("#adminAccessTitle");
+  const body = document.querySelector("#adminAccessBody");
+  const status = document.querySelector("#adminAccessStatus");
+
+  if (title) title.textContent = `Access — ${user.email}`;
+  if (body) body.textContent = "Loading…";
+  if (status) status.textContent = "";
+
+  const { data, error } = await supabase.from("tab_access").select("tab_name").eq("user_id", user.id);
+  if (error) {
+    console.error("adminOpenAccessEditor error:", error);
+    if (body) body.textContent = "Error: " + error.message;
+    modal.classList.remove("hidden");
+    return;
+  }
+
+  const current = new Set((data || []).map((r) => r.tab_name));
+  const tabs = Array.from(BASE_TABS);
+  tabs.push("admin"); // allow grant admin tab visibility too (is_admin still required)
+
+  if (body) body.innerHTML = "";
+  const grid = _el("div", { class: "access-grid" });
+
+  tabs.forEach((t) => {
+    const id = `acc_${user.id}_${t}`;
+    const cb = _el("input", { type: "checkbox", id });
+    cb.checked = current.has(t);
+
+    cb.addEventListener("change", async () => {
+      if (status) status.textContent = "Saving…";
+      if (cb.checked) {
+        const { error: insErr } = await supabase
+          .from("tab_access")
+          .upsert({ user_id: user.id, tab_name: t }, { onConflict: "user_id,tab_name" });
+        if (insErr) {
+          console.error("grant tab error:", insErr);
+          alert("Error granting: " + insErr.message);
+          cb.checked = false;
+        }
+      } else {
+        const { error: delErr } = await supabase.from("tab_access").delete().eq("user_id", user.id).eq("tab_name", t);
+        if (delErr) {
+          console.error("revoke tab error:", delErr);
+          alert("Error revoking: " + delErr.message);
+          cb.checked = true;
+        }
+      }
+      if (status) status.textContent = "";
+    });
+
+    const label = _el("label", { class: "access-item", for: id }, [cb, _el("span", {}, [t])]);
+    grid.appendChild(label);
+  });
+
+  body.appendChild(grid);
+  modal.classList.remove("hidden");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelector("#adminLoadUsersBtn")?.addEventListener("click", adminLoadUsers);
+});
+
+/* ==== END PART 7 ==== */
+/* =========================================================
+   app_final_part08_of_10.txt
+   PART 8/10 — P&L Tools placeholder + Dept Walk placeholder (safe)
+   ========================================================= */
+
+function initPLToolsPlaceholder() {
+  const host = document.querySelector("#tab-pl-tools");
+  if (!host) return;
+  if (host.dataset.initialized === "true") return;
+  host.dataset.initialized = "true";
+
+  const text = (host.textContent || "").trim();
+  if (text.length > 20) return;
+
+  host.innerHTML = `
+    <div class="panel">
+      <h2>P&L Tools</h2>
+      <p>This tab is restored as a placeholder.</p>
+      <div class="callout">
+        <strong>Next phase:</strong> P&L imports, payroll/labor models, dashboards, and forecast vs actual variance.
+      </div>
+      <ul>
+        <li>Upload / map monthly P&amp;L</li>
+        <li>Labor % and RPLH tracking</li>
+        <li>Variance reporting</li>
+      </ul>
+    </div>
+  `;
+}
+
+function initDeptWalkPlaceholder() {
+  const host = document.querySelector("#tab-deptwalk");
+  if (!host) return;
+  if (host.dataset.initialized === "true") return;
+  host.dataset.initialized = "true";
+
+  const text = (host.textContent || "").trim();
+  if (text.length > 20) return;
+
+  host.innerHTML = `
+    <div class="panel">
+      <h2>Dept Walks</h2>
+      <p>Placeholder UI restored. Wiring to your backend comes next.</p>
+      <p><strong>Status:</strong> UI placeholder only</p>
+    </div>
+  `;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initPLToolsPlaceholder();
+  initDeptWalkPlaceholder();
+});
+
+/* ==== END PART 8 ==== */
+/* =========================================================
+   app_final_part09_of_10.txt
+   PART 9/10 — Stability: defaults, change listeners, safe reload
+   ========================================================= */
+
+function ensureDefaultMonthInput() {
+  const input = document.querySelector("#monthInput");
+  if (!input) return;
+  if (input.value) return;
+
+  const now = new Date();
+  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  input.value = `${ym}-01`;
+}
+
+async function onStoreOrMonthChange() {
+  const storeId = document.querySelector("#storeSelect")?.value;
+  const monthVal = getSelectedMonthValue();
+  if (!storeId || !monthVal) return;
+  if (typeof loadMonth !== "function") return;
+  await loadMonth(storeId, monthVal);
+}
+
+function bindChangeReloads() {
+  document.querySelector("#storeSelect")?.addEventListener("change", onStoreOrMonthChange);
+  document.querySelector("#monthInput")?.addEventListener("change", onStoreOrMonthChange);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  ensureDefaultMonthInput();
+  bindChangeReloads();
+});
+
+/* ==== END PART 9 ==== */
+/* =========================================================
+   app_final_part10_of_10.txt
+   PART 10/10 — Final glue: lock badges + initial load safety net
+   ========================================================= */
+
+function _applyMonthlyLockBadge() {
+  const badge = document.querySelector("#monthlyLockBadge");
+  if (!badge) return;
+  badge.textContent = monthlyLocked ? "🔒 Locked" : "";
+  badge.classList.toggle("hidden", !monthlyLocked);
+}
+
+if (typeof setMonthlyUIState === "function") {
+  const _old = setMonthlyUIState;
+  setMonthlyUIState = function(locked) {
+    _old(locked);
+    _applyMonthlyLockBadge();
+  };
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  // Safety net: if signed in and selectors exist, load month once.
+  setTimeout(() => {
+    const storeId = document.querySelector("#storeSelect")?.value;
+    const monthVal = getSelectedMonthValue();
+    if (storeId && monthVal && typeof loadMonth === "function") {
+      loadMonth(storeId, monthVal);
+    }
+  }, 0);
+});
+
+/* ==== END PART 10 ==== */
