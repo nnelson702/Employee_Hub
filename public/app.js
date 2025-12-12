@@ -1193,3 +1193,322 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ==== END PART 10 ==== */
+/* =========================================================
+   HOTFIX OVERRIDES (append to END of app.js)
+   Fixes schema mismatches causing:
+   - stores dropdown not populating (bad column names)
+   - profiles.full_name missing
+   - tab_access.tab_name missing
+   ========================================================= */
+
+async function _trySelect(table, selectExpr, whereFn) {
+  // Helper: try a select; return {data,error,selectExpr}
+  try {
+    let q = supabase.from(table).select(selectExpr);
+    if (typeof whereFn === "function") q = whereFn(q);
+    const { data, error } = await q;
+    return { data, error, selectExpr };
+  } catch (e) {
+    return { data: null, error: { message: String(e) }, selectExpr };
+  }
+}
+
+// ---------------------
+// STORES: robust loader
+// ---------------------
+async function loadStores() {
+  const sel = document.querySelector("#storeSelect");
+  if (!sel) return;
+  sel.length = 1;
+
+  const candidates = [
+    { id: "store_id", name: "name" },
+    { id: "store_id", name: "store_name" },
+    { id: "id", name: "name" },
+    { id: "id", name: "store_name" },
+    { id: "store_number", name: "name" },
+    { id: "store_number", name: "store_name" },
+  ];
+
+  let rows = null;
+  let used = null;
+  let lastErr = null;
+
+  for (const c of candidates) {
+    const { data, error } = await _trySelect(
+      "stores",
+      `${c.id},${c.name}`,
+      (q) => q.order(c.id, { ascending: true })
+    );
+    if (!error) {
+      rows = data || [];
+      used = c;
+      break;
+    }
+    lastErr = error;
+    // If it's not "undefined column" we stop early
+    if (error?.code && error.code !== "42703") break;
+  }
+
+  if (!rows) {
+    console.error("loadStores failed:", lastErr);
+    const status = document.querySelector("#sales-status") || document.querySelector("#dow-status");
+    if (status) status.textContent = "Error loading stores (check table columns / RLS).";
+    return;
+  }
+
+  rows.forEach((s) => {
+    const o = document.createElement("option");
+    o.value = s[used.id];
+    o.textContent = `${s[used.id]} — ${s[used.name] ?? ""}`.trim();
+    sel.appendChild(o);
+  });
+
+  if (!currentStoreId && rows.length) {
+    currentStoreId = rows[0][used.id];
+    sel.value = currentStoreId;
+  }
+}
+
+// ---------------------------------------
+// TAB ACCESS: robust loader + editor
+// ---------------------------------------
+async function _loadTabAccessRows(userId) {
+  const cols = ["tab_name", "tab", "tabkey", "tab_slug"];
+  let lastErr = null;
+  for (const col of cols) {
+    const { data, error } = await _trySelect("tab_access", col, (q) => q.eq("user_id", userId));
+    if (!error) return { data: data || [], col };
+    lastErr = error;
+    if (error?.code && error.code !== "42703") break;
+  }
+  console.warn("tab_access not readable (or column mismatch):", lastErr);
+  return { data: [], col: null, error: lastErr };
+}
+
+async function loadAccessAndTabs() {
+  allowedTabs = new Set([...BASE_TABS]);
+
+  // tab_access is optional; if absent/mismatched, app still works with BASE_TABS
+  const { data: accessRows } = await _loadTabAccessRows(session.user.id);
+  (accessRows || []).forEach((r) => {
+    const name = r.tab_name ?? r.tab ?? r.tabkey ?? r.tab_slug;
+    if (name) allowedTabs.add(name);
+  });
+
+  if (profile?.is_admin) allowedTabs.add("admin");
+
+  document.querySelectorAll("[data-tab]").forEach((btn) =>
+    btn.classList.toggle("hidden", !allowedTabs.has(btn.dataset.tab))
+  );
+}
+
+// ---------------------------------------
+// PROFILES: robust admin user loader
+// ---------------------------------------
+async function adminLoadUsers() {
+  if (!profile?.is_admin) return alert("Admin only.");
+
+  const setStatus = (msg) => {
+    const s = document.querySelector("#admin-users-status");
+    if (s) s.textContent = msg || "";
+  };
+
+  setStatus("Loading users…");
+
+  // Try the widest set first, then fall back if columns don't exist.
+  const selects = [
+    "id,email,full_name,is_admin",
+    "id,email,name,is_admin",
+    "id,email,display_name,is_admin",
+    "id,email,is_admin",
+  ];
+
+  let users = null;
+  let lastErr = null;
+
+  for (const sel of selects) {
+    const { data, error } = await _trySelect("profiles", sel, (q) => q.order("email", { ascending: true }));
+    if (!error) {
+      users = data || [];
+      break;
+    }
+    lastErr = error;
+    if (error?.code && error.code !== "42703") break;
+  }
+
+  if (!users) {
+    console.error("adminLoadUsers failed:", lastErr);
+    setStatus("Error loading users (profiles columns mismatch).");
+    return;
+  }
+
+  const host = document.querySelector("#admin-users-table");
+  if (!host) return;
+
+  host.innerHTML = "";
+  const table = document.createElement("table");
+  table.className = "admin-table";
+
+  const thead = document.createElement("thead");
+  thead.innerHTML = "<tr><th>Email</th><th>Name</th><th>Admin</th><th>Access</th></tr>";
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  users.forEach((u) => {
+    const tr = document.createElement("tr");
+
+    const tdEmail = document.createElement("td");
+    tdEmail.textContent = u.email ?? "—";
+
+    const tdName = document.createElement("td");
+    tdName.textContent = u.full_name ?? u.name ?? u.display_name ?? "—";
+
+    const tdAdmin = document.createElement("td");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!u.is_admin;
+    cb.addEventListener("change", async () => {
+      const ok = confirm(`Set admin=${cb.checked} for ${u.email}?`);
+      if (!ok) {
+        cb.checked = !cb.checked;
+        return;
+      }
+      setStatus("Saving…");
+      const { error } = await supabase.from("profiles").update({ is_admin: !!cb.checked }).eq("id", u.id);
+      setStatus("");
+      if (error) {
+        console.error("adminSetIsAdmin error:", error);
+        alert("Error saving admin flag: " + error.message);
+      }
+    });
+    tdAdmin.appendChild(cb);
+
+    const tdAccess = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn-secondary";
+    btn.textContent = "Edit Tabs";
+    btn.addEventListener("click", () => adminOpenAccessEditor(u));
+    tdAccess.appendChild(btn);
+
+    tr.appendChild(tdEmail);
+    tr.appendChild(tdName);
+    tr.appendChild(tdAdmin);
+    tr.appendChild(tdAccess);
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  host.appendChild(table);
+  setStatus("");
+}
+
+async function adminOpenAccessEditor(user) {
+  if (!profile?.is_admin) return alert("Admin only.");
+
+  // Ensure modal exists (created by prior code). If not, create a minimal one.
+  let modal = document.querySelector("#adminAccessModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "adminAccessModal";
+    modal.className = "modal-overlay hidden";
+    modal.innerHTML = `
+      <div class="modal">
+        <h2 id="adminAccessTitle">Edit User Access</h2>
+        <div class="modal-body"><div id="adminAccessBody">Loading…</div></div>
+        <div class="modal-footer">
+          <span id="adminAccessStatus" class="modal-status"></span>
+          <button id="adminAccessCloseBtn" class="btn-secondary" type="button">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.querySelector("#adminAccessCloseBtn").onclick = () => modal.classList.add("hidden");
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) modal.classList.add("hidden");
+    });
+  }
+
+  const title = document.querySelector("#adminAccessTitle");
+  const body = document.querySelector("#adminAccessBody");
+  const status = document.querySelector("#adminAccessStatus");
+
+  if (title) title.textContent = `Access — ${user.email}`;
+  if (body) body.textContent = "Loading…";
+  if (status) status.textContent = "";
+
+  const { data: accessRows, col } = await _loadTabAccessRows(user.id);
+  const current = new Set((accessRows || []).map((r) => r.tab_name ?? r.tab ?? r.tabkey ?? r.tab_slug).filter(Boolean));
+
+  const tabs = Array.from(BASE_TABS);
+  tabs.push("admin");
+
+  if (body) body.innerHTML = "";
+  const grid = document.createElement("div");
+  grid.className = "access-grid";
+
+  for (const t of tabs) {
+    const id = `acc_${user.id}_${t}`;
+    const label = document.createElement("label");
+    label.className = "access-item";
+    label.htmlFor = id;
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = id;
+    cb.checked = current.has(t);
+
+    cb.addEventListener("change", async () => {
+      if (status) status.textContent = "Saving…";
+
+      if (!col) {
+        // If tab_access column unknown, we can't write safely.
+        alert("tab_access table/column mismatch. Fix schema or update hotfix mapping.");
+        cb.checked = !cb.checked;
+        if (status) status.textContent = "";
+        return;
+      }
+
+      if (cb.checked) {
+        const payload = { user_id: user.id };
+        payload[col] = t;
+
+        const { error } = await supabase.from("tab_access").upsert(payload, { onConflict: `user_id,${col}` });
+        if (error) {
+          console.error("grant tab error:", error);
+          alert("Error granting: " + error.message);
+          cb.checked = false;
+        }
+      } else {
+        let q = supabase.from("tab_access").delete().eq("user_id", user.id);
+        q = q.eq(col, t);
+        const { error } = await q;
+        if (error) {
+          console.error("revoke tab error:", error);
+          alert("Error revoking: " + error.message);
+          cb.checked = true;
+        }
+      }
+
+      if (status) status.textContent = "";
+    });
+
+    const span = document.createElement("span");
+    span.textContent = t;
+
+    label.appendChild(cb);
+    label.appendChild(span);
+    grid.appendChild(label);
+  }
+
+  body.appendChild(grid);
+  modal.classList.remove("hidden");
+}
+
+/* =========================
+   END HOTFIX OVERRIDES
+   ========================= */
+
