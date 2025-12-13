@@ -114,6 +114,7 @@ if (!error && accessRows?.length) {
 
 function showTab(tab) {
   if (!allowedTabs.has(tab)) return;
+  try { localStorage.setItem("activeTab", tab); } catch {}
 
   // persist last tab
   try { localStorage.setItem("activeTab", tab); } catch (_) {}
@@ -134,17 +135,17 @@ async function loadStores() {
   const { data } = await supabase
     .from("stores_v")
     .select("store_id, name")
-    .order("store_id");
+    .order("id");
 
   data?.forEach((s) => {
     const o = document.createElement("option");
-    o.value = s.store_id;
+    o.value = s.id;
     o.textContent = `${s.store_id} — ${s.store_name}`;
     sel.appendChild(o);
   });
 
   if (!currentStoreId && data?.length) {
-    currentStoreId = data[0].store_id;
+    currentStoreId = data[0].id;
     sel.value = currentStoreId;
   }
 }
@@ -347,12 +348,32 @@ async function loadDailyRows(storeId, monthVal) {
   const status = document.querySelector("#dow-status");
   if (status) status.textContent = "Loading daily…";
 
+  // Prefer unified view if present (has TY + LY + goals + actuals)
+  try {
+    const { data, error } = await supabase
+      .from("v_calendar_month")
+      .select("*")
+      .eq("store_id", storeId)
+      .eq("month", monthVal)
+      .order("date", { ascending: true });
+
+    if (!error && data) {
+      const monthLocked = (data || []).some(r => r.locked === true);
+      setDailyUIState(monthLocked);
+      if (status) status.textContent = "";
+      return { rows: data || [], locked: monthLocked };
+    }
+  } catch (e) {
+    // fall through
+  }
+
+  // Fallback: goals only from forecast_daily
   const start = `${monthVal}-01`;
   const end = `${monthVal}-31`;
 
   const { data, error } = await supabase
     .from("forecast_daily")
-    .select("id,date,sales_goal,txn_goal,atv_goal,sales_actual,txn_actual,atv_actual,daily_share,locked")
+    .select("id,date,sales_goal,txn_goal,atv_goal,daily_share,week_of_month,weekday_index,locked")
     .eq("store_id", storeId)
     .gte("date", start)
     .lte("date", end)
@@ -363,7 +384,6 @@ async function loadDailyRows(storeId, monthVal) {
     return { rows: [], locked: false };
   }
 
-  // dailyLocked is true if ANY row in month is locked (we lock the plan as a whole)
   const monthLocked = (data || []).some(r => r.locked === true);
   setDailyUIState(monthLocked);
 
@@ -373,6 +393,7 @@ async function loadDailyRows(storeId, monthVal) {
 
 // =====================
 // LOAD ENTIRE MONTH (monthly + daily + calendar)
+// ===================== (monthly + daily + calendar)
 // =====================
 async function loadMonth(storeId, monthVal) {
   currentStoreId = storeId;
@@ -751,28 +772,45 @@ async function openDayModal(dateStr, row) {
     document.querySelector("#dd_atv_actual").value = "";
   }
 
-  // Load Last Year actuals
-  const d = new Date(dateStr);
-  d.setFullYear(d.getFullYear() - 1);
-  const lyDate = d.toISOString().slice(0, 10);
+// Load Last Year actuals
+// If v_calendar_month provided LY fields, use them
+const lySales = row?.sales_actual_ly ?? row?.sales_ly ?? row?.ly_sales ?? null;
+const lyTxn   = row?.txn_actual_ly ?? row?.txn_ly ?? row?.ly_txn ?? null;
 
-  const { data } = await supabase
-    .from("forecast_daily")
-    .select("sales_actual, txn_actual")
-    .eq("store_id", currentStoreId)
-    .eq("date", lyDate)
-    .maybeSingle();
-
-  document.querySelector("#dd_sales_actual_ly").value =
-    data?.sales_actual ?? "—";
-  document.querySelector("#dd_txn_actual_ly").value =
-    data?.txn_actual ?? "—";
+if (lySales != null || lyTxn != null) {
+  document.querySelector("#dd_sales_actual_ly").value = (lySales ?? "—");
+  document.querySelector("#dd_txn_actual_ly").value = (lyTxn ?? "—");
   document.querySelector("#dd_atv_actual_ly").value =
-    data?.sales_actual && data?.txn_actual
-      ? (data.sales_actual / data.txn_actual).toFixed(2)
-      : "—";
+    (lySales != null && lyTxn) ? (Number(lySales) / Number(lyTxn)).toFixed(2) : "—";
+} else {
+  // Fallback: hit historical_sales by date (if present)
+  try {
+    const d = new Date(dateStr);
+    d.setFullYear(d.getFullYear() - 1);
+    const lyDate = d.toISOString().slice(0, 10);
 
-  document.querySelector("#saveDayBtn").onclick = () => saveDayEdits(dateStr);
+    const { data } = await supabase
+      .from("historical_sales")
+      .select("*")
+      .eq("store_id", currentStoreId)
+      .eq("date", lyDate)
+      .maybeSingle();
+
+    const hsSales = data?.sales ?? data?.net_sales ?? data?.sales_actual ?? null;
+    const hsTxn = data?.txn ?? data?.txns ?? data?.transactions ?? data?.txn_actual ?? null;
+
+    document.querySelector("#dd_sales_actual_ly").value = hsSales ?? "—";
+    document.querySelector("#dd_txn_actual_ly").value = hsTxn ?? "—";
+    document.querySelector("#dd_atv_actual_ly").value =
+      (hsSales != null && hsTxn) ? (Number(hsSales) / Number(hsTxn)).toFixed(2) : "—";
+  } catch {
+    document.querySelector("#dd_sales_actual_ly").value = "—";
+    document.querySelector("#dd_txn_actual_ly").value = "—";
+    document.querySelector("#dd_atv_actual_ly").value = "—";
+  }
+}
+
+document.querySelector("#saveDayBtn").onclickdocument.querySelector("#saveDayBtn").onclick = () => saveDayEdits(dateStr);
   document.querySelector("#dayDetailsModal").classList.remove("hidden");
 }
 
@@ -796,23 +834,43 @@ async function saveDayEdits(dateStr) {
 
   document.querySelector("#dayModalStatus").textContent = "Saving…";
 
-  const { error } = await supabase.from("forecast_daily").upsert(
+  // Save GOALS (forecast_daily)
+  const { error: goalErr } = await supabase.from("forecast_daily").upsert(
     {
       store_id: currentStoreId,
       date: dateStr,
       sales_goal: salesGoal,
-      sales_actual: salesActual,
       txn_goal: txnGoal,
-      txn_actual: txnActual,
-      atv_goal: atvGoal,
-      atv_actual: atvActual
+      atv_goal: atvGoal
     },
     { onConflict: "store_id,date" }
   );
 
-  if (error) {
-    document.querySelector("#dayModalStatus").textContent = error.message;
+  if (goalErr) {
+    document.querySelector("#dayModalStatus").textContent = goalErr.message;
     return;
+  }
+
+  // Save ACTUALS (actual_daily) if table exists
+  // NOTE: Some schemas store actuals separately; we try and ignore failures.
+  try {
+    const { error: actErr } = await supabase.from("actual_daily").upsert(
+      {
+        store_id: currentStoreId,
+        date: dateStr,
+        sales_actual: salesActual,
+        txn_actual: txnActual,
+        atv_actual: atvActual
+      },
+      { onConflict: "store_id,date" }
+    );
+
+    if (actErr) {
+      // don't block goals save
+      console.warn("actual_daily save skipped:", actErr.message);
+    }
+  } catch (e) {
+    // ignore if table not accessible
   }
 
   document.querySelector("#dayModalStatus").textContent = "Saved.";
@@ -969,7 +1027,7 @@ function renderAdminUsersTable(users) {
     tbody.appendChild(
       _el("tr", {}, [
         _el("td", {}, [u.email || "—"]),
-        _el("td", {}, [u.full_name || "—"]),
+        _el("td", {}, [(u.full_name || u.name || u.display_name || "—")]),
         _el("td", {}, [cb]),
         _el("td", {}, [btn]),
       ])
