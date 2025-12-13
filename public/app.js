@@ -71,7 +71,12 @@ async function onSignedIn() {
   await loadProfile();
   await loadStores();
   await loadAccessAndTabs();
-  showTab("home");
+    const last = (() => {
+      try { return localStorage.getItem("activeTab"); } catch (_) { return null; }
+  })();
+
+  showTab(last && allowedTabs.has(last) ? last : "home");
+
 }
 
 function onSignedOut() {
@@ -93,11 +98,11 @@ async function loadAccessAndTabs() {
   allowedTabs = new Set([...BASE_TABS]);
   const { data: accessRows, error } = await supabase
     .from("tab_access")
-    .select("tab_name")
+    .select("tab_key")
     .eq("user_id", session?.user?.id);
 
 if (!error && accessRows?.length) {
-  accessRows.forEach(r => allowedTabs.add(r.tab_name));
+  accessRows.forEach(r => allowedTabs.add(r.tab_key));
 }
 
   if (profile?.is_admin) allowedTabs.add("admin");
@@ -109,6 +114,10 @@ if (!error && accessRows?.length) {
 
 function showTab(tab) {
   if (!allowedTabs.has(tab)) return;
+
+  // persist last tab
+  try { localStorage.setItem("activeTab", tab); } catch (_) {}
+
   $$("[data-tab]").forEach((b) =>
     b.classList.toggle("active", b.dataset.tab === tab)
   );
@@ -562,7 +571,7 @@ async function applyDowWeightsToMonth() {
 
   const { error } = await supabase
     .from("forecast_daily")
-    .upsert(dailyPayload, { onConflict: "forecast_daily_store_id_date_key" });
+    .upsert(dailyPayload, { onConflict: "store_id,date" });
 
   if (error) {
     if (status) status.textContent = "Error saving daily breakdown: " + error.message;
@@ -1018,7 +1027,7 @@ async function adminOpenAccessEditor(user) {
   if (body) body.textContent = "Loading…";
   if (status) status.textContent = "";
 
-  const { data, error } = await supabase.from("tab_access").select("tab_name").eq("user_id", user.id);
+const { data, error } = await supabase.from("tab_access").select("tab_key").eq("user_id", user.id);
   if (error) {
     console.error("adminOpenAccessEditor error:", error);
     if (body) body.textContent = "Error: " + error.message;
@@ -1026,7 +1035,7 @@ async function adminOpenAccessEditor(user) {
     return;
   }
 
-  const current = new Set((data || []).map((r) => r.tab_name));
+const current = new Set((data || []).map((r) => r.tab_key));
   const tabs = Array.from(BASE_TABS);
   tabs.push("admin"); // allow grant admin tab visibility too (is_admin still required)
 
@@ -1043,14 +1052,14 @@ async function adminOpenAccessEditor(user) {
       if (cb.checked) {
         const { error: insErr } = await supabase
           .from("tab_access")
-          .upsert({ user_id: user.id, tab_name: t }, { onConflict: "user_id,tab_name" });
+          .upsert({ user_id: user.id, tab_key: t }, { onConflict: "user_id,tab_key" });
         if (insErr) {
           console.error("grant tab error:", insErr);
           alert("Error granting: " + insErr.message);
           cb.checked = false;
         }
       } else {
-        const { error: delErr } = await supabase.from("tab_access").delete().eq("user_id", user.id).eq("tab_name", t);
+        const { error: delErr } = await supabase.from("tab_access").delete().eq("user_id", user.id).eq("tab_key", t);
         if (delErr) {
           console.error("revoke tab error:", delErr);
           alert("Error revoking: " + delErr.message);
