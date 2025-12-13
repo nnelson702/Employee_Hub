@@ -314,6 +314,13 @@
 
         const sales = r?.sales_goal != null ? Number(r.sales_goal).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0}) : "";
         const txn = r?.txn_goal != null ? Number(r.txn_goal).toLocaleString() : "";
+        // Avoid "atv is not defined" runtime errors and show ATV when available.
+        const atvNum = (r?.atv_goal != null)
+          ? Number(r.atv_goal)
+          : (r?.sales_goal != null && r?.txn_goal != null && Number(r.txn_goal) !== 0)
+            ? (Number(r.sales_goal) / Number(r.txn_goal))
+            : null;
+        const atv = atvNum == null ? "" : atvNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
         html += `
           <div class="calendar-cell" data-date="${dateStr}">
