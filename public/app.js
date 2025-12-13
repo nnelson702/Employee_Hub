@@ -123,8 +123,8 @@ async function loadStores() {
   sel.length = 1;
 
   const { data } = await supabase
-    .from("stores")
-    .select("store_id, store_name")
+    .from("stores_v")
+    .select("store_id, name")
     .order("store_id");
 
   data?.forEach((s) => {
