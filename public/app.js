@@ -562,7 +562,7 @@ async function applyDowWeightsToMonth() {
 
   const { error } = await supabase
     .from("forecast_daily")
-    .upsert(dailyPayload, { onConflict: "store_id,date" });
+    .upsert(dailyPayload, { onConflict: "forecast_daily_store_id_date_key" });
 
   if (error) {
     if (status) status.textContent = "Error saving daily breakdown: " + error.message;
