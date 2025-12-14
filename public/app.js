@@ -11,6 +11,26 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ---- SESSION SELF-HEAL: prevent invalid refresh token from breaking the app ----
+async function _selfHealInvalidRefreshToken() {
+  try {
+    const { error } = await supabase.auth.getSession();
+    if (error && /refresh token/i.test(error.message || "")) {
+      // Clear Supabase auth storage keys
+      Object.keys(localStorage).filter(k => k.startsWith("sb-")).forEach(k => localStorage.removeItem(k));
+      Object.keys(sessionStorage).filter(k => k.startsWith("sb-")).forEach(k => sessionStorage.removeItem(k));
+      try { await supabase.auth.signOut({ scope: "local" }); } catch (_) {}
+      location.reload();
+      return false;
+    }
+    return true;
+  } catch (_) {
+    return true;
+  }
+}
+_selfHealInvalidRefreshToken();
+
+
 let session = null;
 let profile = null;
 let currentStoreId = null;
@@ -29,32 +49,6 @@ const BASE_TABS = new Set([
   "eir",
   "pop"
 ]);
-// ---- SESSION SELF-HEAL (prevents Invalid Refresh Token from killing the app) ----
-async function selfHealInvalidRefreshToken() {
-  try {
-    const { data, error } = await supabase.auth.getSession();
-
-    // If Supabase storage is corrupted (missing refresh_token), clear and force re-login.
-    if (error && /refresh token/i.test(error.message || "")) {
-      Object.keys(localStorage)
-        .filter((k) => k.startsWith("sb-"))
-        .forEach((k) => localStorage.removeItem(k));
-
-      Object.keys(sessionStorage)
-        .filter((k) => k.startsWith("sb-"))
-        .forEach((k) => sessionStorage.removeItem(k));
-
-      try { await supabase.auth.signOut({ scope: "local" }); } catch (e) {}
-      location.reload();
-      return false;
-    }
-    return true;
-  } catch (e) {
-    return true; // don't block app on unexpected issues
-  }
-}
-
-selfHealInvalidRefreshToken();
 
 let allowedTabs = new Set([...BASE_TABS]);
 
@@ -62,24 +56,7 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 async function initAuth() {
-  // Some browsers can end up with a stale refresh token in storage.
-  // Supabase will then fail every request with:
-  //   AuthApiError: Invalid Refresh Token: Refresh Token Not Found
-  // We hard-reset local auth storage and return to signed-out state.
-  const { data, error } = await supabase.auth.getSession();
-  if (error && /Invalid Refresh Token|refresh token/i.test(String(error.message || error))) {
-    try {
-      // Clear common Supabase auth keys (project-ref prefixed)
-      Object.keys(localStorage)
-        .filter((k) => k.includes("sb-") && k.includes("auth"))
-        .forEach((k) => localStorage.removeItem(k));
-    } catch (_) {}
-    try { await supabase.auth.signOut(); } catch (_) {}
-    session = null;
-    onSignedOut();
-    return;
-  }
-
+  const { data } = await supabase.auth.getSession();
   session = data?.session ?? null;
 
   supabase.auth.onAuthStateChange((_e, s) => {
@@ -176,13 +153,14 @@ async function loadStores() {
 
   const { data } = await supabase
     .from("stores_v")
-    .select("store_id, name")
+    .select("store_id, store_name, name, code, timezone")
     .order("store_id");
 
   data?.forEach((s) => {
     const o = document.createElement("option");
     o.value = s.store_id;
-    o.textContent = `${s.store_id} — ${s.store_name}`;
+        const label = (s.store_name ?? s.name ?? s.code ?? s.store_id);
+    o.textContent = `${s.store_id} — ${label}`;
     sel.appendChild(o);
   });
 
@@ -961,7 +939,7 @@ async function adminLoadUsers() {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id,email,is_admin")
+    .select("id,email,is_admin,role,full_name,name,title")
     .order("email", { ascending: true });
 
   if (error) {
@@ -1009,12 +987,18 @@ function renderAdminUsersTable(users) {
       ["Edit Tabs"]
     );
 
+    const btnProfile = _el(
+      "button",
+      { class: "btn-primary", type: "button", onclick: () => adminOpenUserProfile(u) },
+      ["Profile"]
+    );
+
     tbody.appendChild(
       _el("tr", {}, [
         _el("td", {}, [u.email || "—"]),
         _el("td", {}, [u.full_name || "—"]),
         _el("td", {}, [cb]),
-        _el("td", {}, [btn]),
+        _el("td", {}, [btnProfile, " ", btn]),
       ])
     );
   });
@@ -1253,248 +1237,6 @@ document.addEventListener("DOMContentLoaded", () => {
    - tab_access.tab_name missing
    ========================================================= */
 
-// -------------------------------------------------------
-// ADMIN: Full User Profile Drawer / Modal
-// Fields: name, email, role, is_admin, store access, tab access
-// -------------------------------------------------------
-
-async function adminOpenUserProfile(userId) {
-  if (!profile?.is_admin) return alert("Admin only.");
-
-  // Create modal once
-  let modal = document.getElementById("adminUserProfileModal");
-  if (!modal) {
-    modal = document.createElement("div");
-    modal.id = "adminUserProfileModal";
-    modal.className = "modal-overlay hidden";
-    modal.innerHTML = `
-      <div class="modal" style="max-width: 860px;">
-        <h2 id="adminUserProfileTitle">User Profile</h2>
-        <div class="modal-body" id="adminUserProfileBody">Loading…</div>
-        <div class="modal-footer" style="display:flex;gap:10px;align-items:center;justify-content:space-between;">
-          <span id="adminUserProfileStatus" class="modal-status"></span>
-          <div style="display:flex;gap:10px;">
-            <button id="adminUserProfileSaveBtn" class="btn" type="button">Save</button>
-            <button id="adminUserProfileCloseBtn" class="btn-secondary" type="button">Close</button>
-          </div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    document.getElementById("adminUserProfileCloseBtn").onclick = () => modal.classList.add("hidden");
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) modal.classList.add("hidden");
-    });
-  }
-
-  const title = document.getElementById("adminUserProfileTitle");
-  const body = document.getElementById("adminUserProfileBody");
-  const status = document.getElementById("adminUserProfileStatus");
-  const saveBtn = document.getElementById("adminUserProfileSaveBtn");
-
-  if (status) status.textContent = "";
-  if (body) body.textContent = "Loading…";
-
-  // --- Load data ---
-  const setStatus = (msg) => { if (status) status.textContent = msg || ""; };
-
-  // Profile row
-  const profileSelects = [
-    "id,email,full_name,name,title,role,is_admin",
-    "id,email,name,title,role,is_admin",
-    "id,email,full_name,role,is_admin",
-    "id,email,role,is_admin",
-    "id,email,is_admin",
-  ];
-  let userRow = null;
-  let lastErr = null;
-  for (const sel of profileSelects) {
-    const { data, error } = await _trySelect("profiles", sel, (q) => q.eq("id", userId).limit(1));
-    if (!error) { userRow = (data && data[0]) ? data[0] : null; break; }
-    lastErr = error;
-    if (error?.code && error.code !== "42703") break;
-  }
-  if (!userRow) {
-    console.error("adminOpenUserProfile: failed to load profiles row", lastErr);
-    alert("Could not load profile for user. Check RLS + columns.");
-    return;
-  }
-
-  // Stores list
-  const storesCandidates = [
-    { table: "stores_v", id: "store_id", name: "store_name" },
-    { table: "stores_v", id: "store_id", name: "name" },
-    { table: "stores", id: "id", name: "name" },
-    { table: "stores", id: "store_id", name: "name" },
-  ];
-  let stores = [];
-  let usedStores = null;
-  for (const c of storesCandidates) {
-    const { data, error } = await _trySelect(c.table, `${c.id},${c.name}`, (q) => q.order(c.id, { ascending: true }));
-    if (!error) { stores = data || []; usedStores = c; break; }
-  }
-
-  // User store access
-  const { data: storeAccessRows } = await supabase
-    .from("store_access")
-    .select("store_id")
-    .eq("user_id", userId);
-  const storeAccess = new Set((storeAccessRows || []).map((r) => String(r.store_id)));
-
-  // User tab access
-  const { data: tabRows } = await supabase
-    .from("tab_access")
-    .select("tab_name,tab_key")
-    .eq("user_id", userId);
-  const tabAccess = new Set(
-    (tabRows || []).map((r) => (r.tab_name || r.tab_key)).filter(Boolean)
-  );
-
-  const displayName = userRow.full_name ?? userRow.name ?? userRow.email ?? "User";
-  if (title) title.textContent = `User Profile — ${displayName}`;
-
-  // --- Render UI ---
-  const roles = ["admin", "store_manager", "department_lead", "associate"]; // your intended role model
-  const currentRole = (userRow.role || (userRow.is_admin ? "admin" : "associate"));
-
-  const tabs = Array.from(new Set([...BASE_TABS, "admin", "insights", "tasks", "feed", "content"]));
-  tabs.sort();
-
-  const safe = (v) => (v == null ? "" : String(v));
-  const storesHtml = (stores || []).map((s) => {
-    const sid = String(s[usedStores?.id] ?? s.id ?? s.store_id ?? "");
-    const sname = String(s[usedStores?.name] ?? s.name ?? s.store_name ?? "");
-    const checked = storeAccess.has(sid) ? "checked" : "";
-    return `
-      <label style="display:flex;gap:10px;align-items:center;">
-        <input type="checkbox" class="aup-store" value="${sid}" ${checked} />
-        <span>${sid} — ${sname}</span>
-      </label>
-    `;
-  }).join("");
-
-  const tabsHtml = tabs.map((t) => {
-    const checked = tabAccess.has(t) ? "checked" : "";
-    return `
-      <label style="display:flex;gap:10px;align-items:center;">
-        <input type="checkbox" class="aup-tab" value="${t}" ${checked} />
-        <span>${t}</span>
-      </label>
-    `;
-  }).join("");
-
-  body.innerHTML = `
-    <div style="display:grid;grid-template-columns: 1fr 1fr; gap: 18px;">
-      <div class="card" style="padding:14px;">
-        <h3 style="margin:0 0 10px;">Profile</h3>
-
-        <div style="display:grid;gap:10px;">
-          <label style="display:grid;gap:6px;">
-            <span>Email</span>
-            <input id="aup-email" class="input" type="text" value="${safe(userRow.email)}" disabled />
-          </label>
-
-          <label style="display:grid;gap:6px;">
-            <span>Name</span>
-            <input id="aup-name" class="input" type="text" value="${safe(userRow.full_name ?? userRow.name)}" placeholder="Full name" />
-          </label>
-
-          <label style="display:grid;gap:6px;">
-            <span>Title</span>
-            <input id="aup-title" class="input" type="text" value="${safe(userRow.title)}" placeholder="Job title" />
-          </label>
-
-          <label style="display:grid;gap:6px;">
-            <span>Role</span>
-            <select id="aup-role" class="input">
-              ${roles.map((r) => `<option value="${r}" ${r === currentRole ? "selected" : ""}>${r}</option>`).join("")}
-            </select>
-          </label>
-
-          <label style="display:flex;gap:10px;align-items:center;">
-            <input id="aup-is-admin" type="checkbox" ${userRow.is_admin ? "checked" : ""} />
-            <span>Is Admin (overrides access)</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="card" style="padding:14px;">
-        <h3 style="margin:0 0 10px;">Store Access</h3>
-        <div style="display:grid;gap:8px;max-height:260px;overflow:auto;border:1px solid #e5e7eb;padding:10px;border-radius:10px;">
-          ${storesHtml || "<div style=\"opacity:.7\">No stores found. (Check stores table / stores_v view / RLS)</div>"}
-        </div>
-      </div>
-
-      <div class="card" style="padding:14px; grid-column: 1 / -1;">
-        <h3 style="margin:0 0 10px;">Tab Access</h3>
-        <div style="display:grid;grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-height:260px; overflow:auto; border:1px solid #e5e7eb; padding:10px; border-radius:10px;">
-          ${tabsHtml}
-        </div>
-      </div>
-    </div>
-  `;
-
-  // --- Save handler ---
-  saveBtn.onclick = async () => {
-    setStatus("Saving…");
-    saveBtn.disabled = true;
-
-    try {
-      const nextName = document.getElementById("aup-name")?.value?.trim() || null;
-      const nextTitle = document.getElementById("aup-title")?.value?.trim() || null;
-      const nextRole = document.getElementById("aup-role")?.value || null;
-      const nextIsAdmin = !!document.getElementById("aup-is-admin")?.checked;
-
-      // Update profile
-      const profilePayload = { is_admin: nextIsAdmin };
-      if ("full_name" in userRow) profilePayload.full_name = nextName;
-      else if ("name" in userRow) profilePayload.name = nextName;
-      if ("title" in userRow) profilePayload.title = nextTitle;
-      if ("role" in userRow) profilePayload.role = nextRole;
-
-      const { error: updErr } = await supabase.from("profiles").update(profilePayload).eq("id", userId);
-      if (updErr) throw updErr;
-
-      // Store access: replace rows
-      const nextStores = Array.from(document.querySelectorAll(".aup-store"))
-        .filter((el) => el.checked)
-        .map((el) => el.value);
-
-      await supabase.from("store_access").delete().eq("user_id", userId);
-      if (nextStores.length) {
-        const payload = nextStores.map((sid) => ({ user_id: userId, store_id: sid }));
-        const { error: insErr } = await supabase.from("store_access").insert(payload);
-        if (insErr) throw insErr;
-      }
-
-      // Tab access: replace rows
-      const nextTabs = Array.from(document.querySelectorAll(".aup-tab"))
-        .filter((el) => el.checked)
-        .map((el) => el.value);
-
-      await supabase.from("tab_access").delete().eq("user_id", userId);
-      if (nextTabs.length) {
-        const payload = nextTabs.map((t) => ({ user_id: userId, tab_name: t, tab_key: t }));
-        const { error: tabErr } = await supabase.from("tab_access").insert(payload);
-        if (tabErr) throw tabErr;
-      }
-
-      setStatus("Saved.");
-      // refresh list so admin table reflects changes
-      try { await adminLoadUsers(); } catch (_) {}
-    } catch (e) {
-      console.error("adminOpenUserProfile save error:", e);
-      alert("Error saving user profile/access: " + (e?.message || String(e)));
-      setStatus("Error.");
-    } finally {
-      saveBtn.disabled = false;
-      setTimeout(() => setStatus(""), 2000);
-    }
-  };
-
-  modal.classList.remove("hidden");
-}
-
 async function _trySelect(table, selectExpr, whereFn) {
   // Helper: try a select; return {data,error,selectExpr}
   try {
@@ -1515,16 +1257,13 @@ async function loadStores() {
   if (!sel) return;
   sel.length = 1;
 
-  // Prefer stores_v (stable interface), then fall back to stores.
   const candidates = [
-    { table: "stores_v", id: "store_id", name: "store_name" },
-    { table: "stores_v", id: "store_id", name: "name" },
-    { table: "stores", id: "store_id", name: "name" },
-    { table: "stores", id: "store_id", name: "store_name" },
-    { table: "stores", id: "id", name: "name" },
-    { table: "stores", id: "id", name: "store_name" },
-    { table: "stores", id: "store_number", name: "name" },
-    { table: "stores", id: "store_number", name: "store_name" },
+    { id: "store_id", name: "name" },
+    { id: "store_id", name: "store_name" },
+    { id: "id", name: "name" },
+    { id: "id", name: "store_name" },
+    { id: "store_number", name: "name" },
+    { id: "store_number", name: "store_name" },
   ];
 
   let rows = null;
@@ -1533,7 +1272,7 @@ async function loadStores() {
 
   for (const c of candidates) {
     const { data, error } = await _trySelect(
-      c.table,
+      "stores",
       `${c.id},${c.name}`,
       (q) => q.order(c.id, { ascending: true })
     );
@@ -1655,13 +1394,6 @@ async function adminLoadUsers() {
 
   users.forEach((u) => {
     const tr = document.createElement("tr");
-    tr.style.cursor = "pointer";
-    tr.addEventListener("click", (e) => {
-      // Don't trigger when clicking checkbox/button inside the row
-      const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : "";
-      if (tag === "input" || tag === "button" || tag === "a") return;
-      adminOpenUserProfile(u.id);
-    });
 
     const tdEmail = document.createElement("td");
     tdEmail.textContent = u.email ?? "—";
@@ -1693,11 +1425,8 @@ async function adminLoadUsers() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn-secondary";
-    btn.textContent = "Profile";
-    btn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      adminOpenUserProfile(u.id);
-    });
+    btn.textContent = "Edit Tabs";
+    btn.addEventListener("click", () => adminOpenAccessEditor(u));
     tdAccess.appendChild(btn);
 
     tr.appendChild(tdEmail);
@@ -2228,280 +1957,136 @@ async function adminOpenAccessEditor(user) {
   }, 250);
 })();
 
-/* =========================================================
-   ADMIN USER PROFILE (FULL)
-   - Click a user row or Profile button
-   - Edit: name, role, is_admin
-   - Edit: store_access (checkboxes)
-   - Edit: tab_access (checkboxes)
-   ========================================================= */
+/* =========================
+   Admin: User Profile Modal
+   ========================= */
 
-async function _adminFetchStoresList() {
-  // Prefer stores_v, fall back to stores
-  const tries = [
-    { table: "stores_v", sel: "store_id,store_name" , id: "store_id", name: "store_name" },
-    { table: "stores_v", sel: "store_id,name" , id: "store_id", name: "name" },
-    { table: "stores", sel: "id,name" , id: "id", name: "name" },
-    { table: "stores", sel: "store_id,name" , id: "store_id", name: "name" },
-  ];
-  let lastErr = null;
-  for (const t of tries) {
-    const { data, error } = await _trySelect(t.table, t.sel, (q) => q.order(t.id, { ascending: true }));
-    if (!error) {
-      return (data || []).map((r) => ({
-        id: String(r[t.id]),
-        name: String(r[t.name] ?? r[t.id] ?? ""),
-      }));
-    }
-    lastErr = error;
+function _ensureAdminModalHost() {
+  let host = document.querySelector("#admin-modal-host");
+  if (!host) {
+    host = _el("div", { id: "admin-modal-host" });
+    document.body.appendChild(host);
   }
-  console.warn("_adminFetchStoresList failed:", lastErr);
-  return [];
+  return host;
 }
 
-async function _adminFetchProfile(userId) {
-  const sels = [
-    "id,email,full_name,name,role,title,is_admin",
-    "id,email,name,role,title,is_admin",
-    "id,email,role,is_admin",
-  ];
-  let lastErr = null;
-  for (const sel of sels) {
-    const { data, error } = await _trySelect("profiles", sel, (q) => q.eq("id", userId).limit(1));
-    if (!error) return (data && data[0]) ? data[0] : null;
-    lastErr = error;
-    if (error?.code && error.code !== "42703") break;
-  }
-  console.warn("_adminFetchProfile failed:", lastErr);
-  return null;
-}
+async function adminOpenUserProfile(user) {
+  if (!adminOnlyGuard()) return;
 
-async function _adminFetchUserStores(userId) {
-  const { data, error } = await _trySelect("store_access", "store_id", (q) => q.eq("user_id", userId));
-  if (error) {
-    console.warn("_adminFetchUserStores error:", error);
-    return [];
-  }
-  return (data || []).map((r) => String(r.store_id));
-}
+  const host = _ensureAdminModalHost();
+  host.innerHTML = "";
 
-async function _adminFetchUserTabs(userId) {
-  // tab_access schema varies; support tab_name/tab_key
-  const { data, col } = await _loadTabAccessRows(userId);
-  const names = (data || []).map((r) => r.tab_name ?? r.tab ?? r.tabkey ?? r.tab_slug).filter(Boolean);
-  return { tabs: names, col };
-}
-
-async function _adminSaveProfile(userId, patch) {
-  const { error } = await supabase.from("profiles").update(patch).eq("id", userId);
-  return error;
-}
-
-async function _adminReplaceStoreAccess(userId, storeIds) {
-  // wipe then insert (simple + reliable)
-  let { error } = await supabase.from("store_access").delete().eq("user_id", userId);
-  if (error) return error;
-  if (!storeIds.length) return null;
-  const rows = storeIds.map((sid) => ({ user_id: userId, store_id: sid }));
-  ;({ error } = await supabase.from("store_access").insert(rows));
-  return error;
-}
-
-async function _adminReplaceTabAccess(userId, tabNames) {
-  let { error } = await supabase.from("tab_access").delete().eq("user_id", userId);
-  if (error) return error;
-  if (!tabNames.length) return null;
-
-  // Write both tab_name and tab_key to be compatible with constraints / UI
-  const rows = tabNames.map((t) => ({ user_id: userId, tab_name: t, tab_key: t }));
-  ;({ error } = await supabase.from("tab_access").insert(rows));
-  return error;
-}
-
-function _ensureAdminUserProfileModal() {
-  let modal = document.querySelector("#adminUserProfileModal");
-  if (modal) return modal;
-
-  modal = document.createElement("div");
-  modal.id = "adminUserProfileModal";
-  modal.className = "modal-overlay hidden";
-  modal.innerHTML = `
-    <div class="modal" style="max-width: 920px;">
-      <h2 id="adminUserProfileTitle">User Profile</h2>
-      <div class="modal-body">
-        <div id="adminUserProfileBody">Loading…</div>
-      </div>
-      <div class="modal-footer" style="display:flex;gap:10px;align-items:center;justify-content:space-between;">
-        <span id="adminUserProfileStatus" class="modal-status"></span>
-        <div style="display:flex;gap:10px;">
-          <button id="adminUserProfileSaveBtn" class="btn-primary" type="button">Save</button>
-          <button id="adminUserProfileCloseBtn" class="btn-secondary" type="button">Close</button>
-        </div>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-
-  document.querySelector("#adminUserProfileCloseBtn").onclick = () => modal.classList.add("hidden");
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) modal.classList.add("hidden");
-  });
-
-  return modal;
-}
-
-async function adminOpenUserProfile(userId) {
-  if (!profile?.is_admin) return alert("Admin only.");
-
-  const modal = _ensureAdminUserProfileModal();
-  const title = document.querySelector("#adminUserProfileTitle");
-  const body = document.querySelector("#adminUserProfileBody");
-  const status = document.querySelector("#adminUserProfileStatus");
-  const saveBtn = document.querySelector("#adminUserProfileSaveBtn");
-
-  if (status) status.textContent = "Loading…";
-  if (body) body.innerHTML = "Loading…";
-  modal.classList.remove("hidden");
-
-  const [p, storesList, userStores, userTabs] = await Promise.all([
-    _adminFetchProfile(userId),
-    _adminFetchStoresList(),
-    _adminFetchUserStores(userId),
-    _adminFetchUserTabs(userId),
+  const modal = _el("div", { class: "modal-backdrop" }, [
+    _el("div", { class: "modal-card" }, [
+      _el("div", { class: "modal-header" }, [
+        _el("div", { class: "modal-title" }, ["User Profile"]),
+        _el("button", { class: "modal-close", type: "button", onclick: () => (host.innerHTML = "") }, ["×"]),
+      ]),
+      _el("div", { class: "modal-body", id: "admin-user-profile-body" }, ["Loading…"]),
+      _el("div", { class: "modal-footer" }, [
+        _el("button", { class: "btn-secondary", type: "button", onclick: () => (host.innerHTML = "") }, ["Close"]),
+      ]),
+    ]),
   ]);
 
-  const email = p?.email ?? "";
-  if (title) title.textContent = `User Profile — ${email || userId}`;
+  host.appendChild(modal);
 
-  const currentName = p?.full_name ?? p?.name ?? "";
-  const currentRole = p?.role ?? "associate";
-  const currentIsAdmin = !!p?.is_admin;
+  const body = document.querySelector("#admin-user-profile-body");
+  if (!body) return;
 
-  const tabsUniverse = Array.from(new Set([
-    ...Array.from(BASE_TABS),
-    "admin",
-    "insights",
-    "tasks",
-    "feed",
-    "content",
-  ])).sort();
+  // Fetch latest profile + access
+  const [{ data: pData, error: pErr }, { data: storeAccess }, { data: tabAccess }] = await Promise.all([
+    supabase.from("profiles").select("id,email,full_name,name,role,title,is_admin").eq("id", user.id).single(),
+    supabase.from("store_access").select("store_id").eq("user_id", user.id),
+    supabase.from("tab_access").select("tab_name,tab_key").eq("user_id", user.id),
+  ]);
 
-  const selectedStoreSet = new Set((userStores || []).map(String));
-  const selectedTabSet = new Set((userTabs?.tabs || []).map(String));
-
-  const storeCheckboxes = (storesList || []).map((s) => {
-    const checked = selectedStoreSet.has(String(s.id)) ? "checked" : "";
-    return `
-      <label style="display:flex;gap:8px;align-items:center;padding:4px 0;">
-        <input type="checkbox" class="adminStoreChk" value="${String(s.id)}" ${checked} />
-        <span>${String(s.id)} — ${String(s.name)}</span>
-      </label>
-    `;
-  }).join("");
-
-  const tabCheckboxes = tabsUniverse.map((t) => {
-    const checked = selectedTabSet.has(t) ? "checked" : "";
-    return `
-      <label style="display:flex;gap:8px;align-items:center;padding:4px 0;">
-        <input type="checkbox" class="adminTabChk" value="${t}" ${checked} />
-        <span>${t}</span>
-      </label>
-    `;
-  }).join("");
-
-  if (body) {
-    body.innerHTML = `
-      <div style="display:grid;grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div class="card" style="padding:12px;">
-          <h3 style="margin:0 0 8px 0;">Profile</h3>
-          <div style="display:flex;flex-direction:column;gap:10px;">
-            <div>
-              <div class="label">Email</div>
-              <div style="padding:8px 10px;border:1px solid #ddd;border-radius:8px;background:#f8f8f8;">${email || "—"}</div>
-            </div>
-            <div>
-              <label class="label" for="adminUserName">Name</label>
-              <input id="adminUserName" type="text" value="${String(currentName).replace(/"/g,'&quot;')}" />
-            </div>
-            <div>
-              <label class="label" for="adminUserRole">Role</label>
-              <select id="adminUserRole">
-                ${["admin","store_manager","department_lead","associate"].map((r) => `<option value="${r}" ${r===currentRole?"selected":""}>${r}</option>`).join("")}
-              </select>
-            </div>
-            <label style="display:flex;gap:10px;align-items:center;">
-              <input id="adminUserIsAdmin" type="checkbox" ${currentIsAdmin?"checked":""} />
-              <span>Is Admin</span>
-            </label>
-          </div>
-        </div>
-
-        <div class="card" style="padding:12px;">
-          <h3 style="margin:0 0 8px 0;">Store Access</h3>
-          <div style="max-height:260px;overflow:auto;border:1px solid #eee;border-radius:10px;padding:10px;">
-            ${storeCheckboxes || "<div style=\"opacity:.7\">No stores found. (Ensure stores table has rows and stores_v works.)</div>"}
-          </div>
-        </div>
-
-        <div class="card" style="padding:12px; grid-column: 1 / span 2;">
-          <h3 style="margin:0 0 8px 0;">Tab Access</h3>
-          <div style="display:grid;grid-template-columns: repeat(3, 1fr); gap: 6px 16px; max-height:260px; overflow:auto; border:1px solid #eee; border-radius:10px; padding:10px;">
-            ${tabCheckboxes}
-          </div>
-          <div style="margin-top:8px; font-size:12px; opacity:.7;">Note: Admins always see the Admin tab in the UI, regardless of tab_access.</div>
-        </div>
-      </div>
-    `;
+  if (pErr) {
+    body.textContent = "Error loading profile: " + pErr.message;
+    return;
   }
 
-  if (status) status.textContent = "";
+  const profile = pData;
+  const storeIds = new Set((storeAccess || []).map(r => String(r.store_id)));
+  const tabs = new Set((tabAccess || []).map(r => String(r.tab_name || r.tab_key)));
 
-  saveBtn.onclick = async () => {
-    if (status) status.textContent = "Saving…";
+  // Load stores list for checkbox UI
+  const { data: storesRows } = await supabase.from("stores_v").select("store_id, store_name, name").order("store_id");
 
-    const newName = document.querySelector("#adminUserName")?.value?.trim() ?? "";
-    const newRole = document.querySelector("#adminUserRole")?.value ?? "associate";
-    const newIsAdmin = !!document.querySelector("#adminUserIsAdmin")?.checked;
+  const fullName = profile.full_name || profile.name || "";
+  const role = profile.role || "associate";
 
-    const storeIds = Array.from(document.querySelectorAll(".adminStoreChk"))
-      .filter((i) => i.checked)
-      .map((i) => String(i.value));
+  const inputName = _el("input", { type: "text", value: fullName, class: "input" });
+  const inputTitle = _el("input", { type: "text", value: profile.title || "", class: "input" });
 
-    const tabNames = Array.from(document.querySelectorAll(".adminTabChk"))
-      .filter((i) => i.checked)
-      .map((i) => String(i.value));
+  const roleSel = _el("select", { class: "input" }, [
+    ...["admin","store_manager","department_lead","associate"].map(r => _el("option", { value: r, selected: r === role }, [r]))
+  ]);
 
-    // Save profile (try full_name then name)
-    let err = await _adminSaveProfile(userId, { role: newRole, is_admin: newIsAdmin, full_name: newName });
-    if (err && err.code === "42703") {
-      err = await _adminSaveProfile(userId, { role: newRole, is_admin: newIsAdmin, name: newName });
-    }
-    if (err) {
-      console.error("save profile error:", err);
-      if (status) status.textContent = "Error saving profile: " + err.message;
-      return;
-    }
+  const adminCb = _el("input", { type: "checkbox" });
+  adminCb.checked = !!profile.is_admin;
 
-    // Store access
-    err = await _adminReplaceStoreAccess(userId, storeIds);
-    if (err) {
-      console.error("save store_access error:", err);
-      if (status) status.textContent = "Error saving store access: " + err.message;
-      return;
-    }
+  const saveBtn = _el("button", { class: "btn-primary", type: "button" }, ["Save Profile"]);
+  saveBtn.addEventListener("click", async () => {
+    const updates = {
+      full_name: inputName.value.trim(),
+      title: inputTitle.value.trim(),
+      role: roleSel.value,
+      is_admin: adminCb.checked,
+    };
+    const { error } = await supabase.from("profiles").update(updates).eq("id", profile.id);
+    if (error) alert("Save failed: " + error.message);
+    else alert("Saved.");
+  });
 
-    // Tab access
-    err = await _adminReplaceTabAccess(userId, tabNames);
-    if (err) {
-      console.error("save tab_access error:", err);
-      if (status) status.textContent = "Error saving tab access: " + err.message;
-      return;
-    }
+  // Store access editor
+  const storesWrap = _el("div", { class: "checkbox-grid" });
+  (storesRows || []).forEach(s => {
+    const sid = String(s.store_id);
+    const label = s.store_name ?? s.name ?? sid;
+    const cb = _el("input", { type: "checkbox" });
+    cb.checked = storeIds.has(sid);
+    cb.addEventListener("change", async () => {
+      if (cb.checked) {
+        await supabase.from("store_access").insert({ user_id: profile.id, store_id: sid });
+      } else {
+        await supabase.from("store_access").delete().eq("user_id", profile.id).eq("store_id", sid);
+      }
+    });
+    storesWrap.appendChild(_el("label", { class: "checkbox-row" }, [cb, " ", `${sid} — ${label}`]));
+  });
 
-    if (status) status.textContent = "Saved.";
+  // Tab access editor (uses tab_name)
+  const tabsList = ["dashboard","goals","insights","walks","tasks","feed","library","admin"];
+  const tabsWrap = _el("div", { class: "checkbox-grid" });
+  tabsList.forEach(t => {
+    const cb = _el("input", { type: "checkbox" });
+    cb.checked = tabs.has(t);
+    cb.addEventListener("change", async () => {
+      if (cb.checked) {
+        await supabase.from("tab_access").insert({ user_id: profile.id, tab_name: t, tab_key: t });
+      } else {
+        await supabase.from("tab_access").delete().eq("user_id", profile.id).eq("tab_name", t);
+      }
+    });
+    tabsWrap.appendChild(_el("label", { class: "checkbox-row" }, [cb, " ", t]));
+  });
 
-    // Refresh the admin user list in case admin flag changed
-    try { await adminLoadUsers(); } catch (_) {}
-  };
+  body.innerHTML = "";
+  body.appendChild(_el("div", { class: "form-grid" }, [
+    _el("div", {}, [_el("div", { class: "label" }, ["Email"]), _el("div", { class: "mono" }, [profile.email || "—"])]),
+    _el("div", {}, [_el("div", { class: "label" }, ["Name"]), inputName]),
+    _el("div", {}, [_el("div", { class: "label" }, ["Title"]), inputTitle]),
+    _el("div", {}, [_el("div", { class: "label" }, ["Role"]), roleSel]),
+    _el("div", {}, [_el("div", { class: "label" }, ["Is Admin"]), adminCb]),
+    _el("div", {}, [saveBtn]),
+  ]));
+
+  body.appendChild(_el("hr", {}));
+  body.appendChild(_el("h3", {}, ["Store Access"]));
+  body.appendChild(storesWrap);
+
+  body.appendChild(_el("hr", {}));
+  body.appendChild(_el("h3", {}, ["Tab Access"]));
+  body.appendChild(tabsWrap);
 }
-
