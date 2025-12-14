@@ -29,6 +29,32 @@ const BASE_TABS = new Set([
   "eir",
   "pop"
 ]);
+// ---- SESSION SELF-HEAL (prevents Invalid Refresh Token from killing the app) ----
+async function selfHealInvalidRefreshToken() {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+
+    // If Supabase storage is corrupted (missing refresh_token), clear and force re-login.
+    if (error && /refresh token/i.test(error.message || "")) {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith("sb-"))
+        .forEach((k) => localStorage.removeItem(k));
+
+      Object.keys(sessionStorage)
+        .filter((k) => k.startsWith("sb-"))
+        .forEach((k) => sessionStorage.removeItem(k));
+
+      try { await supabase.auth.signOut({ scope: "local" }); } catch (e) {}
+      location.reload();
+      return false;
+    }
+    return true;
+  } catch (e) {
+    return true; // don't block app on unexpected issues
+  }
+}
+
+selfHealInvalidRefreshToken();
 
 let allowedTabs = new Set([...BASE_TABS]);
 
