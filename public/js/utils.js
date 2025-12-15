@@ -1,4 +1,5 @@
 // public/js/utils.js
+
 export function qs(sel, root = document) {
   return root.querySelector(sel);
 }
@@ -42,11 +43,10 @@ export function monthKeyFromInput(value) {
   const [y, m] = value.split("-").map((x) => parseInt(x, 10));
   if (!y || !m) return null;
   const mm = String(m).padStart(2, "0");
-  return `${y}-${mm}-01`; // we store months as date (first of month)
+  return `${y}-${mm}-01`; // store months as first-of-month date
 }
 
 export function isoDate(d) {
-  // Date -> YYYY-MM-DD
   const x = new Date(d);
   const y = x.getFullYear();
   const m = String(x.getMonth() + 1).padStart(2, "0");
@@ -62,11 +62,20 @@ export function debounce(fn, ms = 200) {
   };
 }
 
+// ✅ This is what adminPanel.js is asking for
+export function escapeHtml(input) {
+  const s = String(input ?? "");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 export function toast(message, type = "info") {
-  // lightweight, no dependency; uses #toastHost if present, else alert fallback
   const host = document.getElementById("toastHost");
   if (!host) {
-    // keep it quiet but visible during dev
     console[type === "error" ? "error" : "log"](message);
     return;
   }
