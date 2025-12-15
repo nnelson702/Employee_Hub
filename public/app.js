@@ -1,285 +1,160 @@
-/* global supabase */
+import { createSupabase } from "./js/supabaseClient.js";
+import { createRouter } from "./js/router.js";
+import { createLayout } from "./js/ui/layout.js";
+import { buildNav } from "./js/ui/nav.js";
+import { pages } from "./js/pages/index.js";
+import { toast } from "./js/ui/toast.js";
 
-(function () {
-  const $ = (id) => document.getElementById(id);
+const supabase = createSupabase();
 
-  // ---------- Supabase ----------
-  const CFG = window.APP_CONFIG; // ✅ FIX: use window.APP_CONFIG (not APP_CONFIG)
+// DOM
+const elAuthView = document.getElementById("authView");
+const elAppView = document.getElementById("appView");
+const elBtnSignIn = document.getElementById("btnSignIn");
+const elBtnSignOut = document.getElementById("btnSignOut");
+const elBtnRefresh = document.getElementById("btnRefresh");
+const elEmail = document.getElementById("authEmail");
+const elPassword = document.getElementById("authPassword");
 
-  if (!CFG?.SUPABASE_URL || !CFG?.SUPABASE_ANON_KEY) {
-    console.error("Missing APP_CONFIG. Set SUPABASE_URL and SUPABASE_ANON_KEY in config.js");
-  }
+const elSubtitle = document.getElementById("brandSubtitle");
+const elScopeRole = document.getElementById("scopeRole");
+const elScopeStores = document.getElementById("scopeStores");
+const elStatusPill = document.getElementById("statusPill");
 
-  if (!window.supabase) {
-    console.error("Supabase library not loaded. Check the <script src=...supabase-js...> tag in index.html");
-  }
+const layout = createLayout({
+  setTitle: (t) => (document.getElementById("pageTitle").textContent = t),
+  setSubtitle: (t) => (document.getElementById("pageSubtitle").textContent = t || ""),
+  setBody: (node) => {
+    const body = document.getElementById("pageBody");
+    body.innerHTML = "";
+    body.appendChild(node);
+  },
+});
 
-  const sb = supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
-
-  // ---------- UI helpers ----------
-  function show(el) { el.classList.remove("hidden"); }
-  function hide(el) { el.classList.add("hidden"); }
-  function setBanner(msg, isError = true) {
-    const b = $("global-banner");
-    if (!b) return;
-    if (!msg) { hide(b); b.textContent = ""; return; }
-    b.textContent = msg;
-    b.classList.toggle("banner-error", !!isError);
-    show(b);
-  }
-
-  function fmtRole(role) {
-    if (!role) return "—";
-    return role.replaceAll("_", " ");
-  }
-
-  // ---------- App State ----------
-  const state = {
-    user: null,
-    profile: null,
-    stores: [],
-    role: null,
-    tabAccess: {},
-    activeTab: null,
-    modulesInit: new Set(),
-  };
-
-  // ---------- Tabs ----------
-  const TABS = [
-    { key: "dashboard", label: "Dashboard", el: "tab-dashboard", minRole: "associate" },
-    { key: "goals-admin", label: "Goals Admin", el: "tab-goals-admin", minRole: "admin" },
-    { key: "insights", label: "Goals & Insights", el: "tab-insights", minRole: "associate" },
-    { key: "admin", label: "Admin Panel", el: "tab-admin", minRole: "admin" },
-    { key: "feed", label: "Comms Feed", el: "tab-feed", minRole: "associate" },
-    { key: "tasks", label: "Tasks", el: "tab-tasks", minRole: "associate" },
-    { key: "walks", label: "Dept Walks", el: "tab-walks", minRole: "department_lead" },
-    { key: "marketing", label: "Marketing & Training", el: "tab-marketing", minRole: "associate" }
-  ];
-
-  const ROLE_RANK = { associate: 1, department_lead: 2, store_manager: 3, admin: 4 };
-  function roleMeetsMin(role, minRole) {
-    const r = ROLE_RANK[role] ?? 0;
-    const m = ROLE_RANK[minRole] ?? 0;
-    return r >= m;
-  }
-
-  // ---------- Data loading ----------
-  async function loadProfileAndScope() {
-    const { data: auth } = await sb.auth.getUser();
-    state.user = auth?.user ?? null;
-    if (!state.user) return;
-
-    const profRes = await sb
-      .from("hub_profiles")
-      .select("*")
-      .eq("id", state.user.id);
-
-    if (profRes.error) throw new Error(`hub_profiles not accessible: ${profRes.error.message}`);
-    if (!profRes.data || profRes.data.length === 0) {
-      throw new Error("hub_profiles missing for this user. Admin must create a profile row.");
+const router = createRouter({
+  onRoute: async (routeKey) => {
+    const session = (await supabase.auth.getSession()).data.session;
+    if (!session) {
+      showAuth();
+      return;
     }
 
-    state.profile = profRes.data[0];
-    state.role = state.profile.role || "associate";
+    const ctx = await loadScope(session.user.id);
+    buildNav(document.getElementById("nav"), ctx, routeKey);
 
-    const tabRes = await sb
-      .from("hub_user_tab_access")
-      .select("*")
-      .eq("user_id", state.user.id);
+    if (!pages[routeKey]) routeKey = "goals_admin";
+    const page = pages[routeKey];
 
-    if (tabRes.error) throw new Error(`hub_user_tab_access error: ${tabRes.error.message}`);
-    state.tabAccess = {};
-    (tabRes.data || []).forEach((r) => {
-      state.tabAccess[r.tab_key] = { can_view: !!r.can_view, can_edit: !!r.can_edit };
-    });
+    layout.setTitle(page.title);
+    layout.setSubtitle(page.subtitle || "");
 
-    if (state.role === "admin") {
-      const stRes = await sb.from("hub_stores").select("*").order("store_id", { ascending: true });
-      if (stRes.error) throw new Error(`hub_stores error: ${stRes.error.message}`);
-      state.stores = stRes.data || [];
+    const view = await page.render({ supabase, ctx, toast, layout });
+    layout.setBody(view);
+  },
+});
+
+async function loadScope(userId) {
+  // hub_profiles is authoritative for role
+  const prof = await supabase
+    .from("hub_profiles")
+    .select("id,email,full_name,role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (prof.error) throw new Error(`hub_profiles not accessible: ${prof.error.message}`);
+  if (!prof.data) throw new Error("No hub_profiles row for this user. (Admin needs to add you in Admin Panel > Users)");
+
+  const access = await supabase
+    .from("hub_user_store_access")
+    .select("store_id")
+    .eq("user_id", userId);
+
+  if (access.error) throw new Error(`hub_user_store_access not accessible: ${access.error.message}`);
+
+  const stores = (access.data || []).map((r) => r.store_id);
+
+  // UI scope
+  elScopeRole.textContent = prof.data.role;
+  elScopeStores.textContent = stores.length ? stores.join(", ") : "—";
+  elSubtitle.textContent = `${prof.data.full_name || prof.data.email} • ${prof.data.role}`;
+
+  return { userId, role: prof.data.role, stores };
+}
+
+function showAuth() {
+  elAppView.classList.add("hidden");
+  elAuthView.classList.remove("hidden");
+  elStatusPill.textContent = "Signed out";
+}
+
+function showApp() {
+  elAuthView.classList.add("hidden");
+  elAppView.classList.remove("hidden");
+  elStatusPill.textContent = "Ready";
+}
+
+async function boot() {
+  try {
+    elStatusPill.textContent = "Initializing…";
+
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) {
+      showAuth();
     } else {
-      const accessRes = await sb
-        .from("hub_user_store_access")
-        .select("store_id, hub_stores:hub_stores(store_id,store_name,timezone,is_active,eagle_number)")
-        .eq("user_id", state.user.id);
-
-      if (accessRes.error) throw new Error(`hub_user_store_access error: ${accessRes.error.message}`);
-      state.stores = (accessRes.data || []).map((r) => r.hub_stores).filter(Boolean);
+      showApp();
+      router.start();
     }
-  }
 
-  function applySignedInUI() {
-    hide($("auth-block"));
-    show($("app-shell"));
-    $("user-sub").textContent =
-      `${state.profile.full_name || state.profile.email || "Signed in"} • ${fmtRole(state.role)}`;
-
-    $("scope-pill").innerHTML =
-      `role: <strong>${state.role}</strong><br/>stores: <strong>${(state.stores || []).map(s => s.store_id).join(", ") || "—"}</strong>`;
-  }
-
-  function applySignedOutUI() {
-    show($("auth-block"));
-    hide($("app-shell"));
-    setBanner("");
-  }
-
-  function canViewTab(tabKey, minRole) {
-    const override = state.tabAccess[tabKey];
-    if (override && override.can_view === false) return false;
-    return roleMeetsMin(state.role, minRole);
-  }
-
-  function renderNav() {
-    const nav = $("nav");
-    nav.innerHTML = "";
-
-    TABS.forEach((t) => {
-      if (!canViewTab(t.key, t.minRole)) return;
-
-      const btn = document.createElement("button");
-      btn.className = "nav-btn";
-      btn.type = "button";
-      btn.textContent = t.label;
-      btn.dataset.tab = t.key;
-
-      btn.addEventListener("click", () => openTab(t.key));
-      nav.appendChild(btn);
-    });
-  }
-
-  function setActiveNav(tabKey) {
-    document.querySelectorAll(".nav-btn").forEach((b) => {
-      b.classList.toggle("active", b.dataset.tab === tabKey);
-    });
-  }
-
-  async function openTab(tabKey) {
-    setBanner("");
-    state.activeTab = tabKey;
-
-    TABS.forEach((t) => {
-      const el = $(t.el);
-      if (el) hide(el);
-    });
-
-    const t = TABS.find((x) => x.key === tabKey) || TABS[0];
-    show($(t.el));
-    setActiveNav(tabKey);
-
-    const ctx = {
-      supabase: sb,
-      user: state.user,
-      profile: state.profile,
-      role: state.role,
-      stores: state.stores,
-      tabAccess: state.tabAccess
-    };
-
-    if (!state.modulesInit.has(tabKey)) {
-      state.modulesInit.add(tabKey);
-      try {
-        if (tabKey === "admin" && window.HubAdmin?.init) await window.HubAdmin.init($("admin-root"), ctx);
-        if (tabKey === "goals-admin" && window.HubGoalsAdmin?.init) await window.HubGoalsAdmin.init($("goals-admin-root"), ctx);
-        if (tabKey === "insights" && window.HubInsights?.init) await window.HubInsights.init($("insights-root"), ctx);
-        if (tabKey === "feed" && window.HubFeed?.init) await window.HubFeed.init($("feed-root"), ctx);
-        if (tabKey === "tasks" && window.HubTasks?.init) await window.HubTasks.init($("tasks-root"), ctx);
-        if (tabKey === "walks" && window.HubWalks?.init) await window.HubWalks.init($("walks-root"), ctx);
-        if (tabKey === "marketing" && window.HubMarketing?.init) await window.HubMarketing.init($("marketing-root"), ctx);
-      } catch (e) {
-        console.error(e);
-        setBanner(e.message || String(e));
+    supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        showApp();
+        router.start();
+      } else {
+        showAuth();
       }
-    }
+    });
+  } catch (e) {
+    console.error(e);
+    toast.error(String(e.message || e));
+    showAuth();
   }
+}
 
-  // ---------- Auth ----------
-  async function signIn(email, password) {
-    const res = await sb.auth.signInWithPassword({ email, password });
-    if (res.error) throw new Error(res.error.message);
-  }
+elBtnSignIn.onclick = async () => {
+  try {
+    const email = elEmail.value.trim();
+    const password = elPassword.value;
 
-  async function signOut() {
-    await sb.auth.signOut();
-  }
-
-  // ---------- Bootstrap ----------
-  async function boot() {
-    setBanner("");
-
-    const { data: auth } = await sb.auth.getUser();
-    const user = auth?.user || null;
-
-    if (!user) {
-      applySignedOutUI();
+    if (!email || !password) {
+      toast.error("Enter email + password.");
       return;
     }
 
-    try {
-      await loadProfileAndScope();
-      applySignedInUI();
-      renderNav();
-      const startTab = (state.role === "admin") ? "goals-admin" : "dashboard";
-      await openTab(startTab);
-    } catch (e) {
-      console.error(e);
-      applySignedInUI();
-      setBanner(e.message || String(e));
-    }
+    elBtnSignIn.disabled = true;
+    elStatusPill.textContent = "Signing in…";
+
+    const res = await supabase.auth.signInWithPassword({ email, password });
+    if (res.error) throw res.error;
+
+    toast.ok("Signed in.");
+    showApp();
+    router.start();
+  } catch (e) {
+    console.error(e);
+    toast.error(e.message || String(e));
+    elStatusPill.textContent = "Sign-in failed";
+  } finally {
+    elBtnSignIn.disabled = false;
   }
+};
 
-  // ---------- Wire events AFTER DOM is ready ----------
-  window.addEventListener("DOMContentLoaded", () => {
-    const form = $("auth-form");
-    const btnSignout = $("btn-signout");
-    const btnRefresh = $("btn-refresh");
-    const authErr = $("auth-error");
+elBtnSignOut.onclick = async () => {
+  await supabase.auth.signOut();
+  toast.ok("Signed out.");
+};
 
-    if (!form) {
-      console.error("auth-form not found in DOM.");
-      return;
-    }
+elBtnRefresh.onclick = async () => {
+  router.refresh();
+};
 
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (authErr) hide(authErr);
-
-      const email = $("email").value.trim();
-      const password = $("password").value;
-
-      try {
-        await signIn(email, password);
-        await boot();
-      } catch (err) {
-        if (authErr) {
-          authErr.textContent = err.message || String(err);
-          show(authErr);
-        } else {
-          alert(err.message || String(err));
-        }
-      }
-    });
-
-    btnSignout?.addEventListener("click", async () => {
-      await signOut();
-      state.user = null;
-      state.profile = null;
-      state.stores = [];
-      state.role = null;
-      state.tabAccess = {};
-      state.modulesInit.clear();
-      applySignedOutUI();
-    });
-
-    btnRefresh?.addEventListener("click", async () => {
-      state.modulesInit.clear();
-      await boot();
-    });
-
-    sb.auth.onAuthStateChange(async () => {
-      await boot();
-    });
-
-    boot();
-  });
-})();
+boot();
