@@ -77,7 +77,6 @@ function bindShellEvents() {
 }
 
 async function refreshAll() {
-  // Soft guard: if user isn't admin, show message.
   if ((State.hubProfile?.role || "") !== "admin") {
     toast("Admin Panel requires admin role.", "error");
     return;
@@ -135,7 +134,7 @@ function renderSection() {
   main.innerHTML = `<div class="card">Unknown admin section.</div>`;
 }
 
-/* ---------------- STORES (Profile editor) ---------------- */
+/* ---------------- STORES ---------------- */
 
 function renderStores(main) {
   const selected = cacheStores.find(s => s.store_id === selectedStoreId) || null;
@@ -189,7 +188,7 @@ function renderStores(main) {
           <label>store_name</label>
           <input id="store_name" value="${selected?.store_name || ""}" placeholder="Tropicana" />
 
-          <label>eagle_number (your mapping: 18228->1 etc)</label>
+          <label>eagle_number (18228->1 etc)</label>
           <input id="eagle_number" value="${selected?.eagle_number || ""}" placeholder="1" />
 
           <label>timezone</label>
@@ -206,16 +205,11 @@ function renderStores(main) {
             <div class="spacer"></div>
             <button id="storeReload" class="btn" type="button">Reload</button>
           </div>
-
-          <div class="muted small" style="margin-top:10px">
-            Note: store_id is the primary key; it must match what you use everywhere else.
-          </div>
         </form>
       </div>
     </div>
   `;
 
-  // events
   $("#newStore", main)?.addEventListener("click", () => {
     selectedStoreId = null;
     renderSection();
@@ -250,11 +244,7 @@ function renderStores(main) {
     if (!payload.eagle_number) return toast("eagle_number is required", "error");
 
     const { error } = await supabase.from("hub_stores").upsert(payload, { onConflict: "store_id" });
-    if (error) {
-      console.error(error);
-      toast(error.message, "error");
-      return;
-    }
+    if (error) return toast(error.message, "error");
 
     await loadStores();
     selectedStoreId = payload.store_id;
@@ -263,7 +253,7 @@ function renderStores(main) {
   });
 }
 
-/* ---------------- USERS (Profile editor) ---------------- */
+/* ---------------- USERS (now includes Invite/Create via Edge Function) ---------------- */
 
 function renderUsers(main) {
   const selected = cacheUsers.find(u => u.id === selectedUserId) || null;
@@ -274,15 +264,13 @@ function renderUsers(main) {
         <div class="row">
           <h2 style="margin:0">Users</h2>
           <div class="spacer"></div>
-          <button id="newUser" class="btn primary">+ New User Profile</button>
+          <button id="userReload" class="btn">Reload</button>
         </div>
 
         <div style="height:10px"></div>
 
         <table class="table">
-          <thead>
-            <tr><th>Name</th><th>Email</th><th>Role</th></tr>
-          </thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
           <tbody>
             ${cacheUsers.map(u => `
               <tr data-user-row="${u.id}" style="cursor:pointer">
@@ -295,30 +283,85 @@ function renderUsers(main) {
         </table>
 
         <div class="muted small" style="margin-top:10px">
-          “New User Profile” requires the Auth User UUID (Supabase Auth → Users).
-          We’ll add a proper invite Edge Function next.
+          Click a user to edit profile. Use the Invite/Create panel to onboard new employees end-to-end.
         </div>
       </div>
 
       <div class="card">
         <div class="row">
-          <h2 style="margin:0">User Profile</h2>
+          <h2 style="margin:0">Invite / Create Employee</h2>
           <div class="spacer"></div>
-          <span class="pill">${selected ? "Edit" : "Create"}</span>
+          <span class="pill">Edge Function</span>
         </div>
 
-        <form id="userForm">
-          <label>id (Auth user UUID)</label>
-          <input id="user_id" ${selected ? "disabled" : ""} value="${selected?.id || ""}" placeholder="uuid from Auth → Users" />
+        <div class="muted small" style="margin-top:6px">
+          Invite = email invite flow. Create = set a temporary password now (min 8 chars).
+        </div>
+
+        <form id="inviteForm" style="margin-top:10px">
+          <label>Email</label>
+          <input id="inv_email" type="email" required placeholder="employee@skye.com" />
+
+          <label>Full name</label>
+          <input id="inv_name" placeholder="First Last" />
+
+          <label>Title</label>
+          <input id="inv_title" placeholder="Store Manager" />
+
+          <label>Role</label>
+          <select id="inv_role">
+            ${["associate","department_lead","store_manager","admin"].map(r => `<option value="${r}">${r}</option>`).join("")}
+          </select>
+
+          <label>Store access</label>
+          <div class="card" style="box-shadow:none; padding:10px">
+            ${cacheStores.map(s => `
+              <label class="row" style="margin:0 0 8px 0">
+                <input type="checkbox" data-inv-store="${s.store_id}" style="width:auto" />
+                <span class="mono">${s.store_id}</span>
+                <span class="muted">— ${escapeHtml(s.store_name)}</span>
+              </label>
+            `).join("")}
+          </div>
+
+          <label>Mode</label>
+          <select id="inv_mode">
+            <option value="invite_user">Invite by email</option>
+            <option value="create_user_password">Create with temp password</option>
+          </select>
+
+          <div id="pwBlock" class="hidden">
+            <label>Temp password (min 8 chars)</label>
+            <input id="inv_password" type="text" placeholder="TemporaryPassword123" />
+          </div>
+
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" type="submit">Run</button>
+            <div class="spacer"></div>
+            <button id="inv_clear" class="btn" type="button">Clear</button>
+          </div>
+        </form>
+
+        <div style="height:14px"></div>
+
+        <div class="row">
+          <h2 style="margin:0">Edit Existing Profile</h2>
+          <div class="spacer"></div>
+          <span class="pill">${selected ? "Selected" : "Pick user"}</span>
+        </div>
+
+        <form id="userForm" style="margin-top:10px">
+          <label>id (Auth UUID)</label>
+          <input id="user_id" disabled value="${selected?.id || ""}" />
 
           <label>email</label>
-          <input id="user_email" value="${selected?.email || ""}" placeholder="user@company.com" />
+          <input id="user_email" value="${selected?.email || ""}" />
 
           <label>full_name</label>
-          <input id="user_full_name" value="${selected?.full_name || ""}" placeholder="First Last" />
+          <input id="user_full_name" value="${selected?.full_name || ""}" />
 
           <label>title</label>
-          <input id="user_title" value="${selected?.title || ""}" placeholder="Store Manager" />
+          <input id="user_title" value="${selected?.title || ""}" />
 
           <label>role</label>
           <select id="user_role">
@@ -328,19 +371,12 @@ function renderUsers(main) {
           </select>
 
           <div class="row" style="margin-top:12px">
-            <button class="btn primary" type="submit">Save User</button>
-            <div class="spacer"></div>
-            <button id="userReload" class="btn" type="button">Reload</button>
+            <button class="btn primary" type="submit">Save Profile</button>
           </div>
         </form>
       </div>
     </div>
   `;
-
-  $("#newUser", main)?.addEventListener("click", () => {
-    selectedUserId = null;
-    renderSection();
-  });
 
   $("#userReload", main)?.addEventListener("click", async () => {
     await loadUsers();
@@ -355,44 +391,105 @@ function renderUsers(main) {
     });
   });
 
+  // Invite/Create mode toggles password field
+  const modeSel = $("#inv_mode", main);
+  const pwBlock = $("#pwBlock", main);
+  modeSel?.addEventListener("change", () => {
+    pwBlock.classList.toggle("hidden", modeSel.value !== "create_user_password");
+  });
+
+  $("#inv_clear", main)?.addEventListener("click", () => {
+    $("#inv_email", main).value = "";
+    $("#inv_name", main).value = "";
+    $("#inv_title", main).value = "";
+    $("#inv_role", main).value = "associate";
+    $("#inv_mode", main).value = "invite_user";
+    $("#inv_password", main).value = "";
+    pwBlock.classList.add("hidden");
+    $$("[data-inv-store]", main).forEach(c => c.checked = false);
+  });
+
+  $("#inviteForm", main)?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const email = $("#inv_email", main).value.trim().toLowerCase();
+      const full_name = $("#inv_name", main).value.trim();
+      const title = $("#inv_title", main).value.trim();
+      const role = $("#inv_role", main).value;
+      const action = $("#inv_mode", main).value;
+      const password = $("#inv_password", main).value;
+
+      const store_ids = $$("[data-inv-store]", main)
+        .filter(c => c.checked)
+        .map(c => c.getAttribute("data-inv-store"));
+
+      if (!email) return toast("Email required", "error");
+      if (action === "create_user_password" && (!password || password.length < 8)) {
+        return toast("Temp password must be 8+ chars", "error");
+      }
+
+      // Default tab access: keep it simple; you can tighten later.
+      const tab_access = TAB_DEFS.map(t => ({
+        tab_key: t.key,
+        can_view: true,
+        can_edit: t.key === "admin-panel" ? false : false
+      }));
+
+      const res = await callHubAdminUser({
+        action,
+        email,
+        full_name,
+        title,
+        role,
+        store_ids,
+        tab_access,
+        password: action === "create_user_password" ? password : undefined
+      });
+
+      if (!res.ok) {
+        console.error(res);
+        return toast(res.error || "Invite/Create failed", "error");
+      }
+
+      toast(`Success: ${res.mode} → ${res.email}`, "success");
+      await loadUsers();
+      renderSection();
+    } catch (err) {
+      console.error(err);
+      toast("Invite/Create failed (see console)", "error");
+    }
+  });
+
   $("#userForm", main)?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (!selected?.id) return toast("Pick a user first", "error");
 
     const payload = {
-      id: $("#user_id", main).value.trim(),
+      id: selected.id,
       email: $("#user_email", main).value.trim(),
       full_name: $("#user_full_name", main).value.trim(),
       title: $("#user_title", main).value.trim(),
       role: $("#user_role", main).value
     };
 
-    if (!payload.id) return toast("User id (UUID) is required", "error");
-    if (!payload.email) return toast("Email is required", "error");
-
     const { error } = await supabase.from("hub_profiles").upsert(payload, { onConflict: "id" });
-    if (error) {
-      console.error(error);
-      toast(error.message, "error");
-      return;
-    }
+    if (error) return toast(error.message, "error");
 
     await loadUsers();
     selectedUserId = payload.id;
+    toast("Profile saved.", "success");
     renderSection();
-    toast("User saved.", "success");
   });
 }
-
-/* ---------------- PERMISSIONS (Store + Tab access) ---------------- */
+/* ---------------- PERMISSIONS ---------------- */
 
 async function renderPermissions(main) {
   const selected = cacheUsers.find(u => u.id === selectedUserId) || cacheUsers[0] || null;
-  if (!selected && cacheUsers.length === 0) {
+  if (!selected) {
     main.innerHTML = `<div class="card">No users found in hub_profiles.</div>`;
     return;
   }
-
-  selectedUserId = selected?.id;
+  selectedUserId = selected.id;
 
   const [{ data: storeAccess }, { data: tabAccess }] = await Promise.all([
     supabase.from("hub_user_store_access").select("store_id").eq("user_id", selectedUserId),
@@ -410,9 +507,7 @@ async function renderPermissions(main) {
         <div class="pill mono">${escapeHtml(selected.email)} • ${escapeHtml(selected.role)}</div>
       </div>
 
-      <div style="height:10px"></div>
-
-      <label>Select user</label>
+      <label style="margin-top:12px">Select user</label>
       <select id="permUserSelect">
         ${cacheUsers.map(u => `<option value="${u.id}" ${u.id===selectedUserId?"selected":""}>${escapeHtml(u.email)} (${escapeHtml(u.role)})</option>`).join("")}
       </select>
@@ -422,8 +517,6 @@ async function renderPermissions(main) {
       <div class="grid2">
         <div class="card" style="box-shadow:none">
           <h2 style="margin:0 0 8px 0">Store Access</h2>
-          <div class="muted small">Controls store scoping for views/actions.</div>
-          <div style="height:10px"></div>
 
           ${cacheStores.map(s => `
             <label class="row" style="margin:0 0 8px 0">
@@ -440,8 +533,6 @@ async function renderPermissions(main) {
 
         <div class="card" style="box-shadow:none">
           <h2 style="margin:0 0 8px 0">Tab Access</h2>
-          <div class="muted small">Optional overrides per user (view/edit).</div>
-          <div style="height:10px"></div>
 
           <table class="table">
             <thead><tr><th>Tab</th><th>View</th><th>Edit</th></tr></thead>
@@ -479,61 +570,38 @@ async function renderPermissions(main) {
       .filter(c => c.checked)
       .map(c => c.getAttribute("data-store-access"));
 
-    // Replace strategy: delete then insert
     const del = await supabase.from("hub_user_store_access").delete().eq("user_id", selectedUserId);
-    if (del.error) {
-      console.error(del.error);
-      toast(del.error.message, "error");
-      return;
-    }
+    if (del.error) return toast(del.error.message, "error");
 
     if (checked.length) {
       const ins = await supabase.from("hub_user_store_access").insert(
         checked.map(store_id => ({ user_id: selectedUserId, store_id }))
       );
-      if (ins.error) {
-        console.error(ins.error);
-        toast(ins.error.message, "error");
-        return;
-      }
+      if (ins.error) return toast(ins.error.message, "error");
     }
-
     toast("Store access saved.", "success");
   });
 
   $("#saveTabAccess", main)?.addEventListener("click", async () => {
-    const rows = TAB_DEFS.map(t => {
+    for (const t of TAB_DEFS) {
       const can_view = !!$(`[data-tab-view="${t.key}"]`, main)?.checked;
       const can_edit = !!$(`[data-tab-edit="${t.key}"]`, main)?.checked;
-      return { user_id: selectedUserId, tab_key: t.key, can_view, can_edit };
-    });
 
-    // upsert each row (simple + reliable)
-    for (const r of rows) {
-      const { error } = await supabase.from("hub_user_tab_access").upsert(r, { onConflict: "user_id,tab_key" });
-      if (error) {
-        console.error(error);
-        toast(error.message, "error");
-        return;
-      }
+      const { error } = await supabase.from("hub_user_tab_access").upsert(
+        { user_id: selectedUserId, tab_key: t.key, can_view, can_edit },
+        { onConflict: "user_id,tab_key" }
+      );
+      if (error) return toast(error.message, "error");
     }
     toast("Tab access saved.", "success");
   });
 }
 
-/* ---------------- SPECIAL DAYS (hub_calendar_events) ---------------- */
+/* ---------------- SPECIAL DAYS ---------------- */
 
 async function renderSpecialDays(main) {
-  const { data, error } = await supabase
-    .from("hub_calendar_events")
-    .select("*")
-    .order("event_date");
-
-  if (error) {
-    console.error(error);
-    main.innerHTML = `<div class="card">Failed loading hub_calendar_events</div>`;
-    return;
-  }
+  const { data, error } = await supabase.from("hub_calendar_events").select("*").order("event_date");
+  if (error) return (main.innerHTML = `<div class="card">Failed loading hub_calendar_events</div>`);
 
   main.innerHTML = `
     <div class="grid2">
@@ -544,16 +612,8 @@ async function renderSpecialDays(main) {
           <button id="newEvent" class="btn primary">+ New Day</button>
         </div>
 
-        <div class="muted small" style="margin-top:8px">
-          This is where we’ll add “override weighting” days later (sales/txn multipliers).
-        </div>
-
-        <div style="height:10px"></div>
-
-        <table class="table">
-          <thead>
-            <tr><th>Date</th><th>Name</th><th>Type</th><th>Sales x</th><th>Txn x</th></tr>
-          </thead>
+        <table class="table" style="margin-top:10px">
+          <thead><tr><th>Date</th><th>Name</th><th>Type</th><th>Sales x</th><th>Txn x</th></tr></thead>
           <tbody>
             ${(data||[]).map(ev => `
               <tr data-event-date="${ev.event_date}" style="cursor:pointer">
@@ -569,21 +629,17 @@ async function renderSpecialDays(main) {
       </div>
 
       <div class="card">
-        <div class="row">
-          <h2 style="margin:0">Day Profile</h2>
-          <div class="spacer"></div>
-          <span class="pill">Add/Edit</span>
-        </div>
+        <h2 style="margin:0">Day Profile</h2>
 
-        <form id="eventForm">
+        <form id="eventForm" style="margin-top:10px">
           <label>event_date</label>
           <input id="event_date" type="date" required />
 
           <label>name</label>
-          <input id="event_name" required placeholder="Christmas Eve / Black Friday / etc" />
+          <input id="event_name" required />
 
           <label>event_type</label>
-          <input id="event_type" required placeholder="holiday / promo / weather / etc" />
+          <input id="event_type" required />
 
           <label>multiplier_sales (optional)</label>
           <input id="mult_sales" placeholder="1.15" />
@@ -602,13 +658,13 @@ async function renderSpecialDays(main) {
     </div>
   `;
 
-  function fillForm(ev) {
+  const fillForm = (ev) => {
     $("#event_date", main).value = ev?.event_date || "";
     $("#event_name", main).value = ev?.name || "";
     $("#event_type", main).value = ev?.event_type || "";
     $("#mult_sales", main).value = ev?.multiplier_sales ?? "";
     $("#mult_txn", main).value = ev?.multiplier_txn ?? "";
-  }
+  };
 
   $("#newEvent", main)?.addEventListener("click", () => fillForm(null));
   $("#clearDay", main)?.addEventListener("click", () => fillForm(null));
@@ -623,7 +679,6 @@ async function renderSpecialDays(main) {
 
   $("#eventForm", main)?.addEventListener("submit", async (e) => {
     e.preventDefault();
-
     const payload = {
       event_date: $("#event_date", main).value,
       name: $("#event_name", main).value.trim(),
@@ -632,16 +687,8 @@ async function renderSpecialDays(main) {
       multiplier_txn: toNumOrNull($("#mult_txn", main).value)
     };
 
-    if (!payload.event_date) return toast("event_date required", "error");
-    if (!payload.name) return toast("name required", "error");
-    if (!payload.event_type) return toast("event_type required", "error");
-
     const { error } = await supabase.from("hub_calendar_events").upsert(payload, { onConflict: "event_date" });
-    if (error) {
-      console.error(error);
-      toast(error.message, "error");
-      return;
-    }
+    if (error) return toast(error.message, "error");
 
     toast("Special day saved.", "success");
     renderSection();
@@ -652,27 +699,43 @@ async function renderSpecialDays(main) {
     if (!d) return toast("Pick a day first", "error");
 
     const { error } = await supabase.from("hub_calendar_events").delete().eq("event_date", d);
-    if (error) {
-      console.error(error);
-      toast(error.message, "error");
-      return;
-    }
+    if (error) return toast(error.message, "error");
+
     toast("Deleted.", "success");
     renderSection();
   });
+}
+
+/* ---------------- Edge Function Caller ---------------- */
+
+async function callHubAdminUser(body) {
+  const { data: sess } = await supabase.auth.getSession();
+  const token = sess?.session?.access_token;
+  if (!token) return { ok: false, error: "No session token" };
+
+  const url = `${window.APP_CONFIG.SUPABASE_URL}/functions/v1/hub-admin-user`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, ...out, status: res.status };
+  return out;
 }
 
 /* ---------------- Helpers ---------------- */
 
 function escapeHtml(str) {
   return String(str ?? "")
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
+    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;").replaceAll("'","&#039;");
 }
-
 function toNumOrNull(v) {
   const s = String(v ?? "").trim();
   if (!s) return null;
