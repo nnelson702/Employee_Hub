@@ -21,7 +21,6 @@
 
     <div id="global-banner" class="banner hidden"></div>
 
-    <!-- AUTH -->
     <section id="auth-block" class="card">
       <h2>Sign in</h2>
       <div id="auth-error" class="banner banner-error hidden"></div>
@@ -39,7 +38,6 @@
       <p class="hint">If sign-in succeeds but you see an error banner, your user likely needs a hub profile row.</p>
     </section>
 
-    <!-- APP SHELL -->
     <section id="app-shell" class="shell hidden">
       <aside class="sidebar">
         <div class="card">
@@ -93,17 +91,13 @@
     </section>
   </div>
 
-  <!-- 1) Supabase JS (required) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-  <!-- 2) App config -->
   <script src="./config.js"></script>
 
-  <!-- 3) Modules (optional – safe if missing, app.js checks for them) -->
-  <!-- If you have module files, keep them here before app.js -->
-  <!-- <script src="./modules/admin.js"></script> -->
+  <!-- ✅ modules -->
+  <script src="./modules/admin.js"></script>
+  <script src="./modules/goalsAdmin.js"></script>
 
-  <!-- 4) App -->
   <script src="./app.js"></script>
 </body>
 </html>
