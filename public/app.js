@@ -1,11 +1,39 @@
-import { createSupabase } from "./js/supabaseClient.js";
+// app.js (COPY/REPLACE WHOLE FILE)
+
 import { createRouter } from "./js/router.js";
 import { createLayout } from "./js/ui/layout.js";
 import { buildNav } from "./js/ui/nav.js";
 import { pages } from "./js/pages/index.js";
 import { toast } from "./js/ui/toast.js";
 
-const supabase = createSupabase();
+// -------------------------
+// Supabase singleton client
+// -------------------------
+// Hard-coded to avoid config drift / broken anon keys.
+// anon key is public by design.
+const SUPABASE_URL = "https://bvyrxqfffaxthrjfxjue.supabase.co";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM";
+
+function getSupabaseSingleton() {
+  // If something else already created it, reuse it.
+  if (window.__HUB_SUPABASE__) return window.__HUB_SUPABASE__;
+
+  if (!window.supabase || typeof window.supabase.createClient !== "function") {
+    throw new Error(
+      "Supabase JS client not found. Ensure @supabase/supabase-js is loaded before app.js."
+    );
+  }
+
+  window.__HUB_SUPABASE__ = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY
+  );
+
+  return window.__HUB_SUPABASE__;
+}
+
+const supabase = getSupabaseSingleton();
 
 // DOM
 const elAuthView = document.getElementById("authView");
@@ -23,13 +51,16 @@ const elStatusPill = document.getElementById("statusPill");
 
 const layout = createLayout({
   setTitle: (t) => (document.getElementById("pageTitle").textContent = t),
-  setSubtitle: (t) => (document.getElementById("pageSubtitle").textContent = t || ""),
+  setSubtitle: (t) =>
+    (document.getElementById("pageSubtitle").textContent = t || ""),
   setBody: (node) => {
     const body = document.getElementById("pageBody");
     body.innerHTML = "";
     body.appendChild(node);
   },
 });
+
+let routerStarted = false;
 
 const router = createRouter({
   onRoute: async (routeKey) => {
@@ -61,22 +92,31 @@ async function loadScope(userId) {
     .eq("id", userId)
     .maybeSingle();
 
-  if (prof.error) throw new Error(`hub_profiles not accessible: ${prof.error.message}`);
-  if (!prof.data) throw new Error("No hub_profiles row for this user. (Admin needs to add you in Admin Panel > Users)");
+  if (prof.error)
+    throw new Error(`hub_profiles not accessible: ${prof.error.message}`);
+  if (!prof.data)
+    throw new Error(
+      "No hub_profiles row for this user. (Admin needs to add you in Admin Panel > Users)"
+    );
 
   const access = await supabase
     .from("hub_user_store_access")
     .select("store_id")
     .eq("user_id", userId);
 
-  if (access.error) throw new Error(`hub_user_store_access not accessible: ${access.error.message}`);
+  if (access.error)
+    throw new Error(
+      `hub_user_store_access not accessible: ${access.error.message}`
+    );
 
   const stores = (access.data || []).map((r) => r.store_id);
 
   // UI scope
   elScopeRole.textContent = prof.data.role;
   elScopeStores.textContent = stores.length ? stores.join(", ") : "—";
-  elSubtitle.textContent = `${prof.data.full_name || prof.data.email} • ${prof.data.role}`;
+  elSubtitle.textContent = `${prof.data.full_name || prof.data.email} • ${
+    prof.data.role
+  }`;
 
   return { userId, role: prof.data.role, stores };
 }
@@ -93,6 +133,17 @@ function showApp() {
   elStatusPill.textContent = "Ready";
 }
 
+function startRouterOnce() {
+  if (routerStarted) return;
+  routerStarted = true;
+  router.start();
+}
+
+function stopRouter() {
+  // Router object may not support stop; we just gate starts.
+  routerStarted = false;
+}
+
 async function boot() {
   try {
     elStatusPill.textContent = "Initializing…";
@@ -100,23 +151,26 @@ async function boot() {
     const { data } = await supabase.auth.getSession();
     if (!data.session) {
       showAuth();
+      stopRouter();
     } else {
       showApp();
-      router.start();
+      startRouterOnce();
     }
 
     supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         showApp();
-        router.start();
+        startRouterOnce();
       } else {
         showAuth();
+        stopRouter();
       }
     });
   } catch (e) {
     console.error(e);
     toast.error(String(e.message || e));
     showAuth();
+    stopRouter();
   }
 }
 
@@ -137,8 +191,7 @@ elBtnSignIn.onclick = async () => {
     if (res.error) throw res.error;
 
     toast.ok("Signed in.");
-    showApp();
-    router.start();
+    // Do NOT call router.start() here. Let onAuthStateChange handle it once.
   } catch (e) {
     console.error(e);
     toast.error(e.message || String(e));
