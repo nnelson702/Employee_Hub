@@ -1,88 +1,117 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Skye Employee Hub</title>
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <div id="app-root">
-      <div class="topbar">
-        <div class="brand">
-          <div class="brand-badge">H</div>
-          <div class="brand-text">
-            <div class="brand-title">Skye Employee Hub</div>
-            <div class="brand-subtitle" id="brandSubtitle">Not signed in</div>
-          </div>
-        </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Skye Bridge — Employee Hub</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="toast" class="toast hidden"></div>
 
-        <div class="topbar-actions">
-          <button id="btnRefresh" class="btn btn-ghost">Refresh</button>
-          <button id="btnSignOut" class="btn btn-danger">Sign out</button>
+  <!-- AUTH -->
+  <section id="auth" class="auth-shell">
+    <div class="card auth-card">
+      <div class="brand">
+        <div class="brand-badge">H</div>
+        <div>
+          <div class="brand-title">Skye Employee Hub</div>
+          <div class="brand-sub">Sign in</div>
         </div>
       </div>
 
-      <div class="shell">
-        <aside class="sidebar">
-          <div class="sidebar-section">
-            <div class="sidebar-title">Scope</div>
-            <div class="scope-box">
-              <div><span class="muted">role:</span> <span id="scopeRole">—</span></div>
-              <div><span class="muted">stores:</span> <span id="scopeStores">—</span></div>
-            </div>
-          </div>
+      <form id="authForm" class="auth-form">
+        <label>Email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@company.com" required />
+        <label>Password</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+        <button class="btn primary" type="submit">Sign in</button>
+      </form>
 
-          <div class="sidebar-section">
-            <div class="sidebar-title">Navigation</div>
-            <nav id="nav" class="nav"></nav>
-          </div>
-
-          <div class="sidebar-section">
-            <div class="sidebar-title muted">Status</div>
-            <div id="statusPill" class="status-pill">Loading…</div>
-          </div>
-        </aside>
-
-        <main class="main">
-          <div id="toast" class="toast hidden"></div>
-
-          <div id="authView" class="auth-card hidden">
-            <h2>Sign in</h2>
-            <p class="muted">Use your work email + password.</p>
-
-            <label class="field">
-              <span>Email</span>
-              <input id="authEmail" type="email" autocomplete="email" placeholder="you@company.com" />
-            </label>
-
-            <label class="field">
-              <span>Password</span>
-              <input id="authPassword" type="password" autocomplete="current-password" />
-            </label>
-
-            <button id="btnSignIn" class="btn btn-primary">Sign in</button>
-            <div class="muted small" style="margin-top:10px;">
-              If sign-in “does nothing”, open DevTools Console and tell me the first red error line.
-            </div>
-          </div>
-
-          <div id="appView" class="hidden">
-            <div id="pageHeader" class="page-header">
-              <h1 id="pageTitle">Dashboard</h1>
-              <div id="pageSubtitle" class="muted"></div>
-            </div>
-
-            <div id="pageBody"></div>
-          </div>
-        </main>
+      <div class="muted small">
+        If sign-in ever gets “stuck”, try a hard refresh or open incognito.
       </div>
     </div>
+  </section>
 
-    <!-- Supabase client (UMD) -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- APP -->
+  <section id="app" class="app-shell hidden">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <div class="brand-badge">H</div>
+          <div>
+            <div class="brand-title">Skye Employee Hub</div>
+            <div id="whoami" class="brand-sub muted">—</div>
+          </div>
+        </div>
+      </div>
 
-    <!-- App entry -->
-    <script type="module" src="./app.js"></script>
-  </body>
+      <div class="topbar-right">
+        <button id="btnRefresh" class="btn">Refresh</button>
+        <button id="btnSignOut" class="btn danger">Sign out</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="card scope-card">
+          <div class="small muted">Scope</div>
+          <div id="scopeRole" class="mono">role: —</div>
+          <div id="scopeStores" class="mono">stores: —</div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item active" data-route="goals-admin">Goals Admin</button>
+          <button class="nav-item" data-route="goals-insights">Goals & Insights</button>
+          <button class="nav-item" data-route="admin-panel">Admin Panel</button>
+          <div class="nav-divider"></div>
+          <button class="nav-item" data-route="feed">Comms Feed</button>
+          <button class="nav-item" data-route="tasks">Tasks</button>
+          <button class="nav-item" data-route="walks">Dept Walks</button>
+          <button class="nav-item" data-route="library">Marketing & Training</button>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <section id="route-goals-admin" class="route-view">
+          <div class="card">
+            <h2>Goals Admin</h2>
+            <div class="muted">We’ll re-wire this back to your best version next. Admin Panel comes first.</div>
+          </div>
+        </section>
+
+        <section id="route-goals-insights" class="route-view hidden">
+          <div class="card">
+            <h2>Goals & Insights</h2>
+            <div class="muted">Next after Admin Panel.</div>
+          </div>
+        </section>
+
+        <section id="route-admin-panel" class="route-view hidden"></section>
+
+        <section id="route-feed" class="route-view hidden">
+          <div class="card"><h2>Comms Feed</h2><div class="muted">Stub for now.</div></div>
+        </section>
+
+        <section id="route-tasks" class="route-view hidden">
+          <div class="card"><h2>Tasks</h2><div class="muted">Stub for now.</div></div>
+        </section>
+
+        <section id="route-walks" class="route-view hidden">
+          <div class="card"><h2>Dept Walks</h2><div class="muted">Stub for now.</div></div>
+        </section>
+
+        <section id="route-library" class="route-view hidden">
+          <div class="card"><h2>Marketing & Training</h2><div class="muted">Stub for now.</div></div>
+        </section>
+      </main>
+    </div>
+  </section>
+
+  <!-- Supabase UMD -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script type="module" src="./main.js"></script>
+</body>
 </html>
