@@ -1,103 +1,88 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Skye Employee Hub</title>
-  <link rel="stylesheet" href="./styles.css" />
-</head>
-<body>
-  <div class="page">
-    <header class="topbar">
-      <div class="topbar-left">
-        <div class="brand">Skye Employee Hub</div>
-      </div>
-      <div class="topbar-right">
-        <div id="user-sub" class="user-sub"></div>
-        <button id="btn-refresh" class="btn subtle" type="button">Refresh</button>
-        <button id="btn-signout" class="btn" type="button">Sign out</button>
-      </div>
-    </header>
-
-    <div id="global-banner" class="banner hidden"></div>
-
-    <section id="auth-block" class="card">
-      <h2>Sign in</h2>
-      <div id="auth-error" class="banner banner-error hidden"></div>
-
-      <form id="auth-form" class="form">
-        <label>Email</label>
-        <input id="email" type="email" autocomplete="email" required />
-
-        <label>Password</label>
-        <input id="password" type="password" autocomplete="current-password" required />
-
-        <button class="btn primary" type="submit">Sign in</button>
-      </form>
-
-      <p class="hint">If sign-in succeeds but you see an error banner, your user likely needs a hub profile row.</p>
-    </section>
-
-    <section id="app-shell" class="shell hidden">
-      <aside class="sidebar">
-        <div class="card">
-          <div class="card-title">Scope</div>
-          <div id="scope-pill" class="scope-pill">—</div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Skye Employee Hub</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app-root">
+      <div class="topbar">
+        <div class="brand">
+          <div class="brand-badge">H</div>
+          <div class="brand-text">
+            <div class="brand-title">Skye Employee Hub</div>
+            <div class="brand-subtitle" id="brandSubtitle">Not signed in</div>
+          </div>
         </div>
-        <nav id="nav" class="nav"></nav>
-      </aside>
 
-      <main class="main">
-        <section id="tab-dashboard" class="tab card hidden">
-          <h2>Dashboard</h2>
-          <p>Pick a tab from the left.</p>
-        </section>
+        <div class="topbar-actions">
+          <button id="btnRefresh" class="btn btn-ghost">Refresh</button>
+          <button id="btnSignOut" class="btn btn-danger">Sign out</button>
+        </div>
+      </div>
 
-        <section id="tab-goals-admin" class="tab card hidden">
-          <h2>Goals Admin</h2>
-          <div id="goals-admin-root"></div>
-        </section>
+      <div class="shell">
+        <aside class="sidebar">
+          <div class="sidebar-section">
+            <div class="sidebar-title">Scope</div>
+            <div class="scope-box">
+              <div><span class="muted">role:</span> <span id="scopeRole">—</span></div>
+              <div><span class="muted">stores:</span> <span id="scopeStores">—</span></div>
+            </div>
+          </div>
 
-        <section id="tab-insights" class="tab card hidden">
-          <h2>Goals & Insights</h2>
-          <div id="insights-root"></div>
-        </section>
+          <div class="sidebar-section">
+            <div class="sidebar-title">Navigation</div>
+            <nav id="nav" class="nav"></nav>
+          </div>
 
-        <section id="tab-admin" class="tab card hidden">
-          <h2>Admin Panel</h2>
-          <div id="admin-root"></div>
-        </section>
+          <div class="sidebar-section">
+            <div class="sidebar-title muted">Status</div>
+            <div id="statusPill" class="status-pill">Loading…</div>
+          </div>
+        </aside>
 
-        <section id="tab-feed" class="tab card hidden">
-          <h2>Comms Feed</h2>
-          <div id="feed-root"></div>
-        </section>
+        <main class="main">
+          <div id="toast" class="toast hidden"></div>
 
-        <section id="tab-tasks" class="tab card hidden">
-          <h2>Tasks</h2>
-          <div id="tasks-root"></div>
-        </section>
+          <div id="authView" class="auth-card hidden">
+            <h2>Sign in</h2>
+            <p class="muted">Use your work email + password.</p>
 
-        <section id="tab-walks" class="tab card hidden">
-          <h2>Dept Walks</h2>
-          <div id="walks-root"></div>
-        </section>
+            <label class="field">
+              <span>Email</span>
+              <input id="authEmail" type="email" autocomplete="email" placeholder="you@company.com" />
+            </label>
 
-        <section id="tab-marketing" class="tab card hidden">
-          <h2>Marketing & Training</h2>
-          <div id="marketing-root"></div>
-        </section>
-      </main>
-    </section>
-  </div>
+            <label class="field">
+              <span>Password</span>
+              <input id="authPassword" type="password" autocomplete="current-password" />
+            </label>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./config.js"></script>
+            <button id="btnSignIn" class="btn btn-primary">Sign in</button>
+            <div class="muted small" style="margin-top:10px;">
+              If sign-in “does nothing”, open DevTools Console and tell me the first red error line.
+            </div>
+          </div>
 
-  <!-- ✅ modules -->
-  <script src="./modules/admin.js"></script>
-  <script src="./modules/goalsAdmin.js"></script>
+          <div id="appView" class="hidden">
+            <div id="pageHeader" class="page-header">
+              <h1 id="pageTitle">Dashboard</h1>
+              <div id="pageSubtitle" class="muted"></div>
+            </div>
 
-  <script src="./app.js"></script>
-</body>
+            <div id="pageBody"></div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Supabase client (UMD) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- App entry -->
+    <script type="module" src="./app.js"></script>
+  </body>
 </html>
