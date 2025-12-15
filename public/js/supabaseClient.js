@@ -1,14 +1,7 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "../config.js";
-
-export function createSupabase() {
-  // supabase is injected globally from the CDN UMD script
-  const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  });
-  return client;
+export function getSupabase() {
+  const cfg = window.APP_CONFIG;
+  if (!cfg?.SUPABASE_URL || !cfg?.SUPABASE_ANON_KEY) {
+    throw new Error("Missing APP_CONFIG Supabase settings");
+  }
+  return window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 }
-
