@@ -1,157 +1,109 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Skye Bridge — Employee Hub</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css" />
-  <script src="https://unpkg.com/@supabase/supabase-js@2.48.0/dist/umd/supabase.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Skye Employee Hub</title>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <!-- SIGNED OUT -->
-  <main id="auth-block" class="auth-shell">
-    <div class="auth-card">
-      <div class="brand-lockup">
-        <div class="brand-main">Skye Bridge</div>
-        <div class="brand-sub">Employee Hub</div>
+  <div class="page">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">Skye Employee Hub</div>
       </div>
+      <div class="topbar-right">
+        <div id="user-sub" class="user-sub"></div>
+        <button id="btn-refresh" class="btn subtle" type="button">Refresh</button>
+        <button id="btn-signout" class="btn" type="button">Sign out</button>
+      </div>
+    </header>
 
-      <h1 class="auth-title">Sign in</h1>
-      <p class="muted small">Email + password. (Admin provisions access.)</p>
+    <div id="global-banner" class="banner hidden"></div>
 
-      <form id="auth-form" class="auth-form">
-        <label class="field">
-          <span>Email</span>
-          <input id="email" type="email" autocomplete="email" placeholder="name@company.com" />
-        </label>
+    <!-- AUTH -->
+    <section id="auth-block" class="card">
+      <h2>Sign in</h2>
+      <div id="auth-error" class="banner banner-error hidden"></div>
 
-        <label class="field">
-          <span>Password</span>
-          <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
-        </label>
+      <form id="auth-form" class="form">
+        <label>Email</label>
+        <input id="email" type="email" autocomplete="email" required />
 
-        <button class="btn-primary" type="submit">Sign in</button>
-        <div id="auth-error" class="banner banner-error hidden"></div>
+        <label>Password</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+
+        <button class="btn primary" type="submit">Sign in</button>
       </form>
-    </div>
-  </main>
 
-  <!-- SIGNED IN -->
-  <div id="app-shell" class="app-shell hidden">
-    <aside class="sidebar">
-      <div class="sidebar-top">
-        <div class="app-title">
-          <div class="app-mark">H</div>
-          <div>
-            <div class="app-name">Skye Bridge — Employee Hub</div>
-            <div id="user-sub" class="muted small">Not signed in</div>
-          </div>
-        </div>
-      </div>
+      <p class="hint">If sign-in succeeds but you see an error banner, your user likely needs a hub profile row.</p>
+    </section>
 
-      <div class="sidebar-section-title">Navigation</div>
-      <nav id="nav" class="nav"></nav>
-
-      <div class="sidebar-footer">
-        <div class="muted small" id="scope-pill">role: —<br/>stores: —</div>
-        <div class="sidebar-actions">
-          <button id="btn-refresh" class="btn-secondary" type="button">Refresh</button>
-          <button id="btn-signout" class="btn-danger" type="button">Sign out</button>
-        </div>
-      </div>
-    </aside>
-
-    <main class="main">
-      <div id="global-banner" class="banner banner-error hidden"></div>
-
-      <!-- DASHBOARD -->
-      <section id="tab-dashboard" class="tab hidden">
-        <div class="page-title">
-          <h1>Dashboard</h1>
-          <p class="muted">High-level store performance and alerts. (Next module)</p>
-        </div>
+    <!-- APP SHELL -->
+    <section id="app-shell" class="shell hidden">
+      <aside class="sidebar">
         <div class="card">
-          <div class="card-body">
-            <div class="muted">Coming next: store health summary, alerts, and “at-risk” indicators.</div>
-          </div>
+          <div class="card-title">Scope</div>
+          <div id="scope-pill" class="scope-pill">—</div>
         </div>
-      </section>
+        <nav id="nav" class="nav"></nav>
+      </aside>
 
-      <!-- GOALS ADMIN -->
-      <section id="tab-goals-admin" class="tab hidden">
-        <div class="page-title">
-          <h1>Goals Admin</h1>
-          <p class="muted">Set monthly goals, generate daily, lock days. Monthly is authoritative.</p>
-        </div>
-        <div id="goals-admin-root"></div>
-      </section>
+      <main class="main">
+        <section id="tab-dashboard" class="tab card hidden">
+          <h2>Dashboard</h2>
+          <p>Pick a tab from the left.</p>
+        </section>
 
-      <!-- GOALS & INSIGHTS -->
-      <section id="tab-insights" class="tab hidden">
-        <div class="page-title">
-          <h1>Goals & Insights</h1>
-          <p class="muted">Read-only performance vs goal, pace to goal, ATV trend. (Next module)</p>
-        </div>
-        <div id="insights-root"></div>
-      </section>
+        <section id="tab-goals-admin" class="tab card hidden">
+          <h2>Goals Admin</h2>
+          <div id="goals-admin-root"></div>
+        </section>
 
-      <!-- ADMIN PANEL -->
-      <section id="tab-admin" class="tab hidden">
-        <div class="page-title">
-          <h1>Admin Panel</h1>
-          <p class="muted">Manage stores, employees, store access, tab permissions.</p>
-        </div>
-        <div id="admin-root"></div>
-      </section>
+        <section id="tab-insights" class="tab card hidden">
+          <h2>Goals & Insights</h2>
+          <div id="insights-root"></div>
+        </section>
 
-      <!-- FEED -->
-      <section id="tab-feed" class="tab hidden">
-        <div class="page-title">
-          <h1>Comms Feed</h1>
-          <p class="muted">Company + store streams, comments, reactions, read receipts. (Scaffold)</p>
-        </div>
-        <div id="feed-root"></div>
-      </section>
+        <section id="tab-admin" class="tab card hidden">
+          <h2>Admin Panel</h2>
+          <div id="admin-root"></div>
+        </section>
 
-      <!-- TASKS -->
-      <section id="tab-tasks" class="tab hidden">
-        <div class="page-title">
-          <h1>Tasks</h1>
-          <p class="muted">Assignments, priorities, due dates, linked sources. (Scaffold)</p>
-        </div>
-        <div id="tasks-root"></div>
-      </section>
+        <section id="tab-feed" class="tab card hidden">
+          <h2>Comms Feed</h2>
+          <div id="feed-root"></div>
+        </section>
 
-      <!-- WALKS -->
-      <section id="tab-walks" class="tab hidden">
-        <div class="page-title">
-          <h1>Dept Walks</h1>
-          <p class="muted">Walk templates, execution, issues, images. (Scaffold)</p>
-        </div>
-        <div id="walks-root"></div>
-      </section>
+        <section id="tab-tasks" class="tab card hidden">
+          <h2>Tasks</h2>
+          <div id="tasks-root"></div>
+        </section>
 
-      <!-- MARKETING -->
-      <section id="tab-marketing" class="tab hidden">
-        <div class="page-title">
-          <h1>Marketing & Training</h1>
-          <p class="muted">Asset library, categories, downloads. (Scaffold)</p>
-        </div>
-        <div id="marketing-root"></div>
-      </section>
-    </main>
+        <section id="tab-walks" class="tab card hidden">
+          <h2>Dept Walks</h2>
+          <div id="walks-root"></div>
+        </section>
+
+        <section id="tab-marketing" class="tab card hidden">
+          <h2>Marketing & Training</h2>
+          <div id="marketing-root"></div>
+        </section>
+      </main>
+    </section>
   </div>
 
-  <!-- Load order: config -> app bootstrap -> modules -->
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <!-- 1) Supabase JS (required) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-  <script src="admin.js"></script>
-  <script src="goals-admin.js"></script>
-  <script src="insights.js"></script>
-  <script src="feed.js"></script>
-  <script src="tasks.js"></script>
-  <script src="walks.js"></script>
-  <script src="marketing.js"></script>
+  <!-- 2) App config -->
+  <script src="./config.js"></script>
+
+  <!-- 3) Modules (optional – safe if missing, app.js checks for them) -->
+  <!-- If you have module files, keep them here before app.js -->
+  <!-- <script src="./modules/admin.js"></script> -->
+
+  <!-- 4) App -->
+  <script src="./app.js"></script>
 </body>
 </html>
