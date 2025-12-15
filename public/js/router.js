@@ -1,28 +1,23 @@
-export function createRouter({ onRoute }) {
-  let started = false;
+import { State } from "./state.js";
+import { setActiveButton } from "./ui.js";
 
-  function getRoute() {
-    const h = location.hash || "#goals_admin";
-    return h.replace("#", "");
-  }
+export function initRouter() {
+  document.querySelectorAll("[data-route]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const route = btn.getAttribute("data-route");
+      go(route);
+    });
+  });
 
-  async function run() {
-    const key = getRoute();
-    await onRoute(key);
-  }
-
-  async function start() {
-    if (started) return;
-    started = true;
-
-    window.addEventListener("hashchange", () => run().catch(console.error));
-    await run();
-  }
-
-  function refresh() {
-    run().catch(console.error);
-  }
-
-  return { start, refresh };
+  // default
+  go(State.route);
 }
 
+export function go(route) {
+  State.route = route;
+  setActiveButton(".nav-item", route, "data-route");
+
+  document.querySelectorAll(".route-view").forEach(v => v.classList.add("hidden"));
+  const el = document.querySelector(`#route-${route}`);
+  el?.classList.remove("hidden");
+}
