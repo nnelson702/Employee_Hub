@@ -1,258 +1,157 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8" />
   <title>Skye Bridge — Employee Hub</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://unpkg.com/@supabase/supabase-js@2.48.0/dist/umd/supabase.js"></script>
 </head>
 <body>
-  <div class="app">
+  <!-- SIGNED OUT -->
+  <main id="auth-block" class="auth-shell">
+    <div class="auth-card">
+      <div class="brand-lockup">
+        <div class="brand-main">Skye Bridge</div>
+        <div class="brand-sub">Employee Hub</div>
+      </div>
 
-    <!-- Header -->
-    <header class="topbar">
-      <div class="brand">
-        <div class="logo">H</div>
-        <div class="brand-text">
-          <div class="brand-title">Skye Bridge — Employee Hub</div>
-          <div class="brand-subtitle" id="userSub">Not signed in</div>
+      <h1 class="auth-title">Sign in</h1>
+      <p class="muted small">Email + password. (Admin provisions access.)</p>
+
+      <form id="auth-form" class="auth-form">
+        <label class="field">
+          <span>Email</span>
+          <input id="email" type="email" autocomplete="email" placeholder="name@company.com" />
+        </label>
+
+        <label class="field">
+          <span>Password</span>
+          <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
+        </label>
+
+        <button class="btn-primary" type="submit">Sign in</button>
+        <div id="auth-error" class="banner banner-error hidden"></div>
+      </form>
+    </div>
+  </main>
+
+  <!-- SIGNED IN -->
+  <div id="app-shell" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="app-title">
+          <div class="app-mark">H</div>
+          <div>
+            <div class="app-name">Skye Bridge — Employee Hub</div>
+            <div id="user-sub" class="muted small">Not signed in</div>
+          </div>
         </div>
       </div>
 
-      <div class="topbar-actions">
-        <button class="btn ghost" id="btnRefresh" title="Refresh data">Refresh</button>
-        <button class="btn danger" id="btnSignOut" title="Sign out">Sign out</button>
-      </div>
-    </header>
+      <div class="sidebar-section-title">Navigation</div>
+      <nav id="nav" class="nav"></nav>
 
-    <!-- Auth -->
-    <section id="authView" class="card auth">
-      <h1>Sign in</h1>
-      <p class="muted">Use your employee login.</p>
-
-      <label>Email</label>
-      <input id="email" type="email" placeholder="you@company.com" autocomplete="email" />
-
-      <label>Password</label>
-      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
-
-      <button class="btn primary" id="btnSignIn">Sign in</button>
-
-      <div class="note">
-        <div class="note-title">Trouble signing in?</div>
-        <div class="note-body">Ask an admin to confirm your user exists in <code>hub_profiles</code> and store access is assigned.</div>
-      </div>
-
-      <div id="authMsg" class="msg hidden"></div>
-    </section>
-
-    <!-- Shell -->
-    <section id="appShell" class="shell hidden">
-
-      <!-- Left Nav -->
-      <aside class="nav">
-        <div class="nav-section">
-          <div class="nav-title">Navigation</div>
-
-          <button class="nav-item active" data-tab="tabGoalsAdmin">Goals Admin</button>
-          <button class="nav-item" data-tab="tabGoalsView">Goals & Insights</button>
-
-          <div class="nav-divider"></div>
-
-          <button class="nav-item" data-tab="tabFeed">Comms Feed</button>
-          <button class="nav-item" data-tab="tabTasks">Tasks</button>
-          <button class="nav-item" data-tab="tabWalks">Dept Walks</button>
-          <button class="nav-item" data-tab="tabLibrary">Marketing & Training</button>
-
-          <div class="nav-divider"></div>
-
-          <button class="nav-item admin-only hidden" data-tab="tabAdmin">Admin Panel</button>
+      <div class="sidebar-footer">
+        <div class="muted small" id="scope-pill">role: —<br/>stores: —</div>
+        <div class="sidebar-actions">
+          <button id="btn-refresh" class="btn-secondary" type="button">Refresh</button>
+          <button id="btn-signout" class="btn-danger" type="button">Sign out</button>
         </div>
+      </div>
+    </aside>
 
-        <div class="nav-footer">
-          <div class="small muted" id="roleBadge">role: —</div>
-          <div class="small muted" id="storeScope">stores: —</div>
+    <main class="main">
+      <div id="global-banner" class="banner banner-error hidden"></div>
+
+      <!-- DASHBOARD -->
+      <section id="tab-dashboard" class="tab hidden">
+        <div class="page-title">
+          <h1>Dashboard</h1>
+          <p class="muted">High-level store performance and alerts. (Next module)</p>
         </div>
-      </aside>
-
-      <!-- Main -->
-      <main class="main">
-
-        <div id="globalMsg" class="msg hidden"></div>
-
-        <!-- Goals Admin -->
-        <section id="tabGoalsAdmin" class="tab">
-          <div class="tab-header">
-            <div>
-              <h2>Goals Admin</h2>
-              <div class="muted">Set monthly goals, generate daily, tweak days, lock days. Monthly is authoritative.</div>
-            </div>
+        <div class="card">
+          <div class="card-body">
+            <div class="muted">Coming next: store health summary, alerts, and “at-risk” indicators.</div>
           </div>
+        </div>
+      </section>
 
-          <div class="grid2">
-            <div class="card">
-              <div class="row">
-                <div class="field">
-                  <label>Store</label>
-                  <select id="gaStore"></select>
-                </div>
+      <!-- GOALS ADMIN -->
+      <section id="tab-goals-admin" class="tab hidden">
+        <div class="page-title">
+          <h1>Goals Admin</h1>
+          <p class="muted">Set monthly goals, generate daily, lock days. Monthly is authoritative.</p>
+        </div>
+        <div id="goals-admin-root"></div>
+      </section>
 
-                <div class="field">
-                  <label>Month</label>
-                  <input id="gaMonth" type="month" />
-                </div>
+      <!-- GOALS & INSIGHTS -->
+      <section id="tab-insights" class="tab hidden">
+        <div class="page-title">
+          <h1>Goals & Insights</h1>
+          <p class="muted">Read-only performance vs goal, pace to goal, ATV trend. (Next module)</p>
+        </div>
+        <div id="insights-root"></div>
+      </section>
 
-                <div class="field">
-                  <label>Status</label>
-                  <div class="pill" id="gaStatus">—</div>
-                </div>
-              </div>
+      <!-- ADMIN PANEL -->
+      <section id="tab-admin" class="tab hidden">
+        <div class="page-title">
+          <h1>Admin Panel</h1>
+          <p class="muted">Manage stores, employees, store access, tab permissions.</p>
+        </div>
+        <div id="admin-root"></div>
+      </section>
 
-              <div class="row">
-                <button class="btn ghost" id="gaLoad">Load</button>
-                <button class="btn" id="gaGenerateDaily">Generate Daily</button>
-              </div>
+      <!-- FEED -->
+      <section id="tab-feed" class="tab hidden">
+        <div class="page-title">
+          <h1>Comms Feed</h1>
+          <p class="muted">Company + store streams, comments, reactions, read receipts. (Scaffold)</p>
+        </div>
+        <div id="feed-root"></div>
+      </section>
 
-              <div class="divider"></div>
+      <!-- TASKS -->
+      <section id="tab-tasks" class="tab hidden">
+        <div class="page-title">
+          <h1>Tasks</h1>
+          <p class="muted">Assignments, priorities, due dates, linked sources. (Scaffold)</p>
+        </div>
+        <div id="tasks-root"></div>
+      </section>
 
-              <div class="subgrid">
-                <div class="card soft">
-                  <div class="small muted">Suggested (txn / ATV / sales)</div>
-                  <div class="big" id="gaSuggested">—</div>
-                  <div class="small muted" id="gaFactors">—</div>
-                </div>
+      <!-- WALKS -->
+      <section id="tab-walks" class="tab hidden">
+        <div class="page-title">
+          <h1>Dept Walks</h1>
+          <p class="muted">Walk templates, execution, issues, images. (Scaffold)</p>
+        </div>
+        <div id="walks-root"></div>
+      </section>
 
-                <div class="card soft">
-                  <div class="small muted">Edit Monthly Goal</div>
-
-                  <div class="row">
-                    <div class="field">
-                      <label>Transactions</label>
-                      <input id="gaTxnGoal" type="number" />
-                    </div>
-                    <div class="field">
-                      <label>Sales</label>
-                      <input id="gaSalesGoal" type="number" />
-                    </div>
-                  </div>
-
-                  <div class="row">
-                    <div class="field">
-                      <label>Implied ATV</label>
-                      <div class="pill" id="gaImpliedAtv">—</div>
-                    </div>
-                    <div class="field">
-                      <label>Save Status</label>
-                      <select id="gaSaveStatus">
-                        <option value="draft">draft</option>
-                        <option value="finalized">finalized</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div class="row">
-                    <button class="btn primary" id="gaSaveMonthly">Save Monthly Goal</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="card soft">
-                <div class="small muted">Live totals</div>
-                <div class="totals">
-                  <div>
-                    <div class="small muted">Monthly Target</div>
-                    <div class="big" id="gaMonthlyTarget">—</div>
-                  </div>
-                  <div>
-                    <div class="small muted">Daily Total</div>
-                    <div class="big" id="gaDailyTotal">—</div>
-                  </div>
-                  <div>
-                    <div class="small muted">Δ Remaining (Daily − Monthly)</div>
-                    <div class="big" id="gaDelta">—</div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-            <div class="card">
-              <div class="row between">
-                <div>
-                  <div class="small muted">Daily Calendar</div>
-                  <div class="muted">Edit sales/txns per day. Lock days to prevent redistribution.</div>
-                </div>
-                <div class="small muted" id="gaDailyMeta">—</div>
-              </div>
-
-              <div class="calendar">
-                <div class="cal-head">
-                  <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
-                </div>
-                <div id="gaCalendarGrid" class="cal-grid"></div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Goals View (read-oriented placeholder for now) -->
-        <section id="tabGoalsView" class="tab hidden">
-          <div class="tab-header">
-            <div>
-              <h2>Goals & Insights</h2>
-              <div class="muted">Read-only rollups and comparisons (we’ll flesh this after Goals Admin is solid).</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="muted">Coming next: actual vs goal, MTD % to goal, YoY, ATV, etc.</div>
-          </div>
-        </section>
-
-        <section id="tabFeed" class="tab hidden">
-          <div class="tab-header"><h2>Comms Feed</h2></div>
-          <div class="card"><div class="muted">Scaffolded next.</div></div>
-        </section>
-
-        <section id="tabTasks" class="tab hidden">
-          <div class="tab-header"><h2>Tasks</h2></div>
-          <div class="card"><div class="muted">Scaffolded next.</div></div>
-        </section>
-
-        <section id="tabWalks" class="tab hidden">
-          <div class="tab-header"><h2>Dept Walks</h2></div>
-          <div class="card">
-            <div class="muted">
-              We will port your Apps Script walk flow into Supabase-backed tables after Goals Admin is working.
-            </div>
-          </div>
-        </section>
-
-        <section id="tabLibrary" class="tab hidden">
-          <div class="tab-header"><h2>Marketing & Training Library</h2></div>
-          <div class="card"><div class="muted">Scaffolded next.</div></div>
-        </section>
-
-        <section id="tabAdmin" class="tab hidden">
-          <div class="tab-header">
-            <div>
-              <h2>Admin Panel</h2>
-              <div class="muted">User + store management (you said this is “done”, so we’ll wire UI later).</div>
-            </div>
-          </div>
-          <div class="card"><div class="muted">Admin tools coming after core Goals UI is validated.</div></div>
-        </section>
-
-      </main>
-    </section>
+      <!-- MARKETING -->
+      <section id="tab-marketing" class="tab hidden">
+        <div class="page-title">
+          <h1>Marketing & Training</h1>
+          <p class="muted">Asset library, categories, downloads. (Scaffold)</p>
+        </div>
+        <div id="marketing-root"></div>
+      </section>
+    </main>
   </div>
 
-  <!-- Libraries -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Load order: config -> app bootstrap -> modules -->
+  <script src="config.js"></script>
+  <script src="app.js"></script>
 
-  <!-- App -->
-  <script src="./config.js"></script>
-  <script src="./app.js"></script>
+  <script src="admin.js"></script>
+  <script src="goals-admin.js"></script>
+  <script src="insights.js"></script>
+  <script src="feed.js"></script>
+  <script src="tasks.js"></script>
+  <script src="walks.js"></script>
+  <script src="marketing.js"></script>
 </body>
 </html>
