@@ -1,19 +1,3 @@
-/* public/app.js
-   Minimal, stable, RPC-driven Goals Admin UI.
-   Assumes you have these on Supabase:
-   - hub_profiles (id, email, full_name, role)
-   - hub_user_store_access (user_id, store_id)
-   - hub_stores (store_id, store_name, is_active)
-   - hub_monthly_goals (store_id, month, sales_goal, txn_goal, status)
-   - hub_daily_goals (store_id, date, month, sales_goal, txn_goal, source, locked)
-   - v_hub_goal_month_summary (store_id, month, monthly_sales_goal, monthly_txn_goal, sum_daily_sales, sum_daily_txn, delta_sales, delta_txn, days_present, locked_days)
-   RPC:
-   - hub_suggest_monthly_goal(p_store_id, p_target_month, p_asof)
-   - hub_upsert_monthly_goal(p_store_id, p_month, p_sales_goal, p_txn_goal, p_status)
-   - hub_generate_daily_goals_for_month(p_store_id, p_month, p_asof)
-   - hub_set_daily_goal(p_store_id, p_date, p_sales_goal, p_txn_goal, p_lock)
-*/
-
 (function () {
   const cfg = window.APP_CONFIG || {};
   if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
@@ -23,7 +7,6 @@
 
   const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
-  // ---------- DOM helpers ----------
   const $ = (id) => document.getElementById(id);
   const show = (el) => el.classList.remove("hidden");
   const hide = (el) => el.classList.add("hidden");
@@ -41,68 +24,44 @@
     const x = Number(n || 0);
     return "$" + x.toLocaleString(undefined, { maximumFractionDigits: 0 });
   }
-
-  function num(n) {
-    return Number(n || 0).toLocaleString();
-  }
-
-  function isoToday() {
-    return new Date().toISOString().slice(0, 10);
-  }
-
-  function firstOfMonthISO(yyyyMm) {
-    // yyyy-mm from <input type="month">
-    return `${yyyyMm}-01`;
-  }
-
+  function num(n) { return Number(n || 0).toLocaleString(); }
+  function isoToday() { return new Date().toISOString().slice(0, 10); }
+  function firstOfMonthISO(yyyyMm) { return `${yyyyMm}-01`; }
   function daysInMonth(monthISO) {
     const y = Number(monthISO.slice(0, 4));
     const m = Number(monthISO.slice(5, 7));
     return new Date(y, m, 0).getDate();
   }
-
-  function weekdayIndex(dateISO) {
-    return new Date(dateISO + "T00:00:00").getDay(); // 0..6
-  }
-
+  function weekdayIndex(dateISO) { return new Date(dateISO + "T00:00:00").getDay(); }
   function buildMonthISOFromInput() {
-    const v = $("gaMonth").value; // yyyy-mm
+    const v = $("gaMonth").value;
     if (!v) return null;
     return firstOfMonthISO(v);
   }
 
-  // ---------- App state ----------
   const state = {
     session: null,
-    user: null,         // auth user
-    profile: null,      // hub_profiles row
+    user: null,
+    profile: null,
     role: null,
-    storeIds: [],       // accessible store_ids
-    stores: [],         // store objects
+    storeIds: [],
+    stores: [],
     activeTab: "tabGoalsAdmin",
-
-    // Goals admin selection
     gaStoreId: null,
     gaMonthISO: null,
-
-    // Loaded goal data
     gaMonthlyGoal: null,
     gaSuggestion: null,
     gaDaily: [],
     gaSummary: null,
   };
 
-  // ---------- Navigation ----------
   function setTab(tabId) {
     document.querySelectorAll(".nav-item").forEach((btn) => btn.classList.remove("active"));
     document.querySelectorAll(".tab").forEach((t) => hide(t));
-
     const navBtn = document.querySelector(`.nav-item[data-tab="${tabId}"]`);
     if (navBtn) navBtn.classList.add("active");
-
     const tab = $(tabId);
     if (tab) show(tab);
-
     state.activeTab = tabId;
   }
 
@@ -112,7 +71,6 @@
     });
   }
 
-  // ---------- Auth ----------
   async function signIn(email, password) {
     setMsg(null);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -138,7 +96,6 @@
     });
   }
 
-  // ---------- Profile + store scope ----------
   async function loadProfileAndScope() {
     const user = state.session?.user;
     if (!user) return;
@@ -149,20 +106,42 @@
       .from("hub_profiles")
       .select("id, email, full_name, role")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (pErr) throw new Error(`hub_profiles missing or not accessible: ${pErr.message}`);
+    if (pErr) {
+      throw new Error(`hub_profiles not accessible: ${pErr.message}`);
+    }
+
+    if (!profile) {
+      // Critical: user exists in auth but not in hub_profiles
+      $("userSub").textContent = `${user.email || "Signed in"} • profile missing`;
+      $("roleBadge").textContent = `role: —`;
+      $("storeScope").textContent = `stores: —`;
+
+      setMsg(
+        "Signed in, but your user is not in hub_profiles yet. Add your auth.users.id into public.hub_profiles (role=admin) then refresh.",
+        true
+      );
+
+      // Keep shell visible so they can see message, but disable goal controls by empty stores.
+      state.profile = null;
+      state.role = null;
+      state.storeIds = [];
+      state.stores = [];
+
+      document.querySelectorAll(".admin-only").forEach((el) => el.classList.add("hidden"));
+      return;
+    }
+
     state.profile = profile;
     state.role = profile.role;
 
-    // store scope (admins can see all active stores; non-admin uses hub_user_store_access)
     if (state.role === "admin") {
       const { data: stores, error } = await supabase
         .from("hub_stores")
         .select("store_id, store_name, is_active")
         .eq("is_active", true)
         .order("store_id", { ascending: true });
-
       if (error) throw new Error(error.message);
       state.stores = stores || [];
       state.storeIds = state.stores.map((s) => s.store_id);
@@ -171,7 +150,6 @@
         .from("hub_user_store_access")
         .select("store_id")
         .eq("user_id", user.id);
-
       if (aErr) throw new Error(aErr.message);
 
       state.storeIds = (access || []).map((r) => r.store_id);
@@ -182,47 +160,37 @@
         .in("store_id", state.storeIds)
         .eq("is_active", true)
         .order("store_id", { ascending: true });
-
       if (sErr) throw new Error(sErr.message);
       state.stores = stores || [];
     }
 
-    // UI role badges
     $("userSub").textContent = `${profile.full_name || profile.email} • ${profile.role}`;
     $("roleBadge").textContent = `role: ${profile.role}`;
     $("storeScope").textContent = `stores: ${state.storeIds.length ? state.storeIds.join(", ") : "none"}`;
 
-    // admin-only tab visibility
     document.querySelectorAll(".admin-only").forEach((el) => {
       if (state.role === "admin") el.classList.remove("hidden");
       else el.classList.add("hidden");
     });
   }
 
-  // ---------- Goals Admin UI wiring ----------
   function initGoalsAdminControls() {
-    // Store dropdown
     const sel = $("gaStore");
-    sel.innerHTML = `<option value="">Select store…</option>` + state.stores
+    sel.innerHTML = `<option value="">Select store…</option>` + (state.stores || [])
       .map((s) => `<option value="${s.store_id}">${s.store_id} — ${s.store_name}</option>`)
       .join("");
 
-    // Month input default
     const now = new Date();
     const yyyy = now.getFullYear();
     const mm = String(now.getMonth() + 1).padStart(2, "0");
     $("gaMonth").value = `${yyyy}-${mm}`;
 
-    // default selection
-    if (state.stores.length) {
-      $("gaStore").value = state.stores[0].store_id;
-    }
+    if (state.stores.length) $("gaStore").value = state.stores[0].store_id;
 
     $("gaLoad").onclick = () => loadGoalsAdmin().catch(handleErr);
     $("gaGenerateDaily").onclick = () => generateDaily().catch(handleErr);
     $("gaSaveMonthly").onclick = () => saveMonthly().catch(handleErr);
 
-    // implied ATV live
     const recomputeImpliedAtv = () => {
       const txn = Number($("gaTxnGoal").value || 0);
       const sales = Number($("gaSalesGoal").value || 0);
@@ -236,10 +204,7 @@
     setMsg(null);
     const storeId = $("gaStore").value;
     const monthISO = buildMonthISOFromInput();
-    if (!storeId || !monthISO) {
-      setMsg("Pick a store and month.", true);
-      return;
-    }
+    if (!storeId || !monthISO) { setMsg("Select store/month then Load.", true); return; }
 
     state.gaStoreId = storeId;
     state.gaMonthISO = monthISO;
@@ -262,7 +227,6 @@
       .eq("store_id", storeId)
       .eq("month", monthISO)
       .maybeSingle();
-
     if (error) throw new Error(error.message);
     state.gaMonthlyGoal = data || null;
   }
@@ -273,7 +237,6 @@
       p_target_month: monthISO,
       p_asof: isoToday(),
     });
-
     if (error) throw new Error(error.message);
     const row = Array.isArray(data) ? data[0] : null;
     state.gaSuggestion = row || null;
@@ -286,7 +249,6 @@
       .eq("store_id", storeId)
       .eq("month", monthISO)
       .order("date", { ascending: true });
-
     if (error) throw new Error(error.message);
     state.gaDaily = data || [];
   }
@@ -298,7 +260,6 @@
       .eq("store_id", storeId)
       .eq("month", monthISO)
       .maybeSingle();
-
     if (error) throw new Error(error.message);
     state.gaSummary = data || null;
   }
@@ -308,11 +269,9 @@
     const sug = state.gaSuggestion;
     const sum = state.gaSummary;
 
-    // status
     $("gaStatus").textContent = mg?.status || "—";
     $("gaSaveStatus").value = mg?.status || "draft";
 
-    // suggested
     if (sug) {
       const stxn = Number(sug.suggested_txn || 0);
       const satv = sug.suggested_atv != null ? Number(sug.suggested_atv) : null;
@@ -327,7 +286,6 @@
       $("gaFactors").textContent = "—";
     }
 
-    // monthly inputs (prefer saved goal; else suggestion; else 0)
     const salesVal = mg ? Number(mg.sales_goal || 0) : (sug ? Number(sug.suggested_sales || 0) : 0);
     const txnVal = mg ? Number(mg.txn_goal || 0) : (sug ? Number(sug.suggested_txn || 0) : 0);
 
@@ -335,7 +293,6 @@
     $("gaTxnGoal").value = String(Math.round(txnVal));
     $("gaImpliedAtv").textContent = txnVal ? `$${(salesVal / txnVal).toFixed(2)}` : "—";
 
-    // totals summary
     if (sum) {
       $("gaMonthlyTarget").textContent = `${money(sum.monthly_sales_goal)} / ${num(sum.monthly_txn_goal)} txns`;
       $("gaDailyTotal").textContent = `${money(sum.sum_daily_sales)} / ${num(sum.sum_daily_txn)} txns`;
@@ -355,11 +312,7 @@
     const storeId = state.gaStoreId;
     const monthISO = state.gaMonthISO;
     const grid = $("gaCalendarGrid");
-
-    if (!storeId || !monthISO) {
-      grid.innerHTML = "";
-      return;
-    }
+    if (!storeId || !monthISO) { grid.innerHTML = ""; return; }
 
     const nDays = daysInMonth(monthISO);
     const yyyy = monthISO.slice(0, 4);
@@ -368,20 +321,15 @@
     const map = new Map();
     state.gaDaily.forEach((d) => map.set(d.date, d));
 
-    const firstDayISO = `${monthISO}`;
-    const padStart = weekdayIndex(firstDayISO);
-
+    const padStart = weekdayIndex(monthISO);
     const cells = [];
     for (let i = 0; i < padStart; i++) cells.push({ empty: true });
 
     for (let day = 1; day <= nDays; day++) {
       const dd = String(day).padStart(2, "0");
       const dateISO = `${yyyy}-${mm}-${dd}`;
-      const row = map.get(dateISO);
-      cells.push({ empty: false, dateISO, row });
+      cells.push({ empty: false, dateISO, row: map.get(dateISO) });
     }
-
-    // pad end to complete grid
     while (cells.length % 7 !== 0) cells.push({ empty: true });
 
     grid.innerHTML = "";
@@ -444,18 +392,17 @@
 
       const chkWrap = document.createElement("label");
       chkWrap.className = "checkbox";
-
       const chk = document.createElement("input");
       chk.type = "checkbox";
       chk.checked = locked;
-      chk.disabled = !row; // needs existing daily row
+      chk.disabled = !row;
       chkWrap.appendChild(chk);
       chkWrap.appendChild(document.createTextNode("Lock"));
 
       const save = document.createElement("button");
       save.className = "savebtn";
       save.textContent = "Save";
-      save.disabled = !row; // daily must exist
+      save.disabled = !row;
 
       save.addEventListener("click", async () => {
         try {
@@ -469,7 +416,6 @@
             p_txn_goal: Number(txns.value || 0),
             p_lock: !!chk.checked,
           });
-
           if (error) throw new Error(error.message);
 
           await Promise.all([
@@ -526,7 +472,6 @@
       p_txn_goal: txnGoal,
       p_status: status,
     });
-
     if (error) throw new Error(error.message);
 
     await Promise.all([
@@ -549,7 +494,6 @@
       p_month: monthISO,
       p_asof: isoToday(),
     });
-
     if (error) throw new Error(error.message);
 
     await Promise.all([
@@ -561,7 +505,6 @@
     setMsg("Daily goals generated.", false);
   }
 
-  // ---------- Global buttons ----------
   function initHeaderButtons() {
     $("btnSignOut").onclick = () => signOut().catch(handleErr);
     $("btnRefresh").onclick = () => refreshActive().catch(handleErr);
@@ -570,30 +513,23 @@
   async function refreshActive() {
     setMsg(null);
     if (!state.session) return;
-
     if (state.activeTab === "tabGoalsAdmin") {
-      if ($("gaStore").value && buildMonthISOFromInput()) {
-        await loadGoalsAdmin();
-      } else {
-        setMsg("Select store/month then Load.", true);
-      }
+      if ($("gaStore").value && buildMonthISOFromInput()) await loadGoalsAdmin();
+      else setMsg("Select store/month then Load.", true);
     } else {
       setMsg("Nothing to refresh on this tab yet.", false);
     }
   }
 
-  // ---------- Errors ----------
   function handleErr(e) {
     console.error(e);
     setMsg(e?.message ? e.message : String(e), true);
   }
 
-  // ---------- Boot ----------
   async function boot() {
     initNav();
     initHeaderButtons();
 
-    // if not signed in, show auth
     if (!state.session) {
       hide($("appShell"));
       show($("authView"));
@@ -625,7 +561,6 @@
       return;
     }
 
-    // signed in shell
     $("btnSignOut").disabled = false;
     $("btnRefresh").disabled = false;
     hide($("authView"));
@@ -633,24 +568,17 @@
 
     await loadProfileAndScope();
 
-    // role gate: non-admins should not be in Goals Admin by default
-    if (state.role !== "admin") {
-      setTab("tabGoalsView");
-    } else {
-      setTab("tabGoalsAdmin");
-    }
-
+    // Always init controls (even if stores are empty, it won't crash)
     initGoalsAdminControls();
 
-    // auto-load first store/month if admin
-    if (state.role === "admin") {
+    if (state.role !== "admin") setTab("tabGoalsView");
+    else setTab("tabGoalsAdmin");
+
+    // Only auto-load if we have stores
+    if (state.role === "admin" && state.stores.length) {
       await loadGoalsAdmin();
     }
   }
 
-  // entry
-  loadAuth()
-    .then(() => boot())
-    .catch(handleErr);
-
+  loadAuth().then(() => boot()).catch(handleErr);
 })();
