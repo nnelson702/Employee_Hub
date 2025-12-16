@@ -114,5 +114,32 @@
   <script src="./config.js"></script>
   <script type="module" src="./main.js"></script>
   <script type="module" src="/js/main.js"></script>
+  <!-- AUTH UI -->
+<form id="login-form" autocomplete="on" style="max-width:420px;">
+  <div style="display:flex; flex-direction:column; gap:10px;">
+    <input
+      id="login-email"
+      type="email"
+      placeholder="Email"
+      autocomplete="email"
+      required
+    />
+    <input
+      id="login-password"
+      type="password"
+      placeholder="Password"
+      autocomplete="current-password"
+      required
+    />
+    <button type="submit">Sign in</button>
+  </div>
+</form>
+
+<!-- APP ROOT (renders after login) -->
+<div id="app" style="margin-top:16px;"></div>
+
+<!-- IMPORTANT: ES module entry -->
+<script type="module" src="/js/main.js"></script>
+
 </body>
 </html>
