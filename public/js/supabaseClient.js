@@ -1,7 +1,10 @@
-export function getSupabase() {
-  const cfg = window.APP_CONFIG;
-  if (!cfg?.SUPABASE_URL || !cfg?.SUPABASE_ANON_KEY) {
-    throw new Error("Missing APP_CONFIG Supabase settings");
-  }
-  return window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-}
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+export const SUPABASE_URL = "https://bvyrxqfffaxthrjfxjue.supabase.co";
+export const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2eXJ4cWZmZmF4dGhyamZ4anVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxMDkwMjEsImV4cCI6MjA3NzY4NTAyMX0.BK3LvTsDdLgFn5qNFHQoa4MTkGIe5sNvmVaA8uujvnM";
+
+export const supabase = createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
