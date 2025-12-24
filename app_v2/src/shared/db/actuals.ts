@@ -1,3 +1,6 @@
+// src/shared/db/actuals.ts
+// FULL COPY/REPLACE
+
 import { supabase } from "@/shared/supabase/client";
 
 export type DailyActualRow = {
@@ -8,23 +11,13 @@ export type DailyActualRow = {
   source?: string | null;
   source_ref?: string | null;
   imported_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
-function toRow(r: any): DailyActualRow {
-  return {
-    store_id: String(r.store_id),
-    business_date: String(r.business_date),
-    net_sales_actual: Number(r.net_sales_actual ?? 0),
-    transactions_actual: Number(r.transactions_actual ?? 0),
-    source: r.source ?? null,
-    source_ref: r.source_ref ?? null,
-    imported_at: r.imported_at ?? null,
-  };
-}
-
 /**
- * Fetch actuals for a store for a date range [startIso, endIso) where end is exclusive.
- * Dates must be YYYY-MM-DD.
+ * Fetch actuals for a store across a date range [startIso, endIsoExclusive)
+ * NOTE: Table uses business_date (NOT date)
  */
 export async function fetchDailyActualsForRange(
   storeId: string,
@@ -33,18 +26,31 @@ export async function fetchDailyActualsForRange(
 ): Promise<DailyActualRow[]> {
   const { data, error } = await supabase
     .from("daily_actuals")
-    .select("store_id,business_date,net_sales_actual,transactions_actual,source,source_ref,imported_at")
+    .select(
+      "store_id,business_date,net_sales_actual,transactions_actual,source,source_ref,imported_at,created_at,updated_at"
+    )
     .eq("store_id", storeId)
     .gte("business_date", startIso)
     .lt("business_date", endIsoExclusive)
     .order("business_date", { ascending: true });
 
   if (error) throw error;
-  return (data ?? []).map(toRow);
+
+  return (data ?? []).map((r: any) => ({
+    store_id: String(r.store_id),
+    business_date: String(r.business_date),
+    net_sales_actual: Number(r.net_sales_actual ?? 0),
+    transactions_actual: Number(r.transactions_actual ?? 0),
+    source: r.source ?? null,
+    source_ref: r.source_ref ?? null,
+    imported_at: r.imported_at ?? null,
+    created_at: r.created_at ?? null,
+    updated_at: r.updated_at ?? null,
+  })) as DailyActualRow[];
 }
 
 /**
- * Fetch actuals for a store for the given monthStart (YYYY-MM-01).
+ * Convenience: fetch actuals for a month (monthStart is YYYY-MM-01).
  */
 export async function fetchDailyActualsForMonth(
   storeId: string,
@@ -52,9 +58,9 @@ export async function fetchDailyActualsForMonth(
 ): Promise<DailyActualRow[]> {
   const y = Number(monthStartIso.slice(0, 4));
   const m = Number(monthStartIso.slice(5, 7)) - 1;
-  const start = `${y}-${String(m + 1).padStart(2, "0")}-01`;
-  const next = new Date(y, m + 1, 1);
-  const end = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`;
+  const nextMonthStartIso = `${new Date(y, m + 1, 1).getFullYear()}-${String(
+    new Date(y, m + 1, 1).getMonth() + 1
+  ).padStart(2, "0")}-01`;
 
-  return fetchDailyActualsForRange(storeId, start, end);
+  return fetchDailyActualsForRange(storeId, monthStartIso, nextMonthStartIso);
 }
