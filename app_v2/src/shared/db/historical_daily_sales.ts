@@ -1,3 +1,4 @@
+// src/shared/db/historical_daily_sales.ts
 import { supabase } from "@/shared/supabase/client";
 
 export type HistoricalDailyRow = {
@@ -17,40 +18,39 @@ function toRow(r: any): HistoricalDailyRow {
 }
 
 /**
- * Fetch historical rows for range [startIso, endIso) where end is exclusive.
+ * Fetch historical rows for a store over [startIso, endIso)
  */
-export async function fetchHistoricalForRange(
+export async function fetchHistoricalRange(
+  storeId: string,
   startIso: string,
-  endIsoExclusive: string,
-  storeId?: string | null
+  endIso: string
 ): Promise<HistoricalDailyRow[]> {
-  let q = supabase
+  const { data, error } = await supabase
     .from("historical_daily_sales")
     .select("store_id,date,net_sales,transactions")
+    .eq("store_id", storeId)
     .gte("date", startIso)
-    .lt("date", endIsoExclusive);
+    .lt("date", endIso)
+    .order("date", { ascending: true });
 
-  if (storeId) q = q.eq("store_id", storeId);
-
-  const { data, error } = await q.order("date", { ascending: true });
   if (error) throw error;
-
   return (data ?? []).map(toRow);
 }
 
 /**
- * Convenience: fetch historical rows for a given monthStart (YYYY-MM-01).
+ * Fetch one historical day (LY lookup). Returns null if missing.
  */
-export async function fetchHistoricalForMonth(
-  monthStartIso: string,
-  storeId?: string | null
-): Promise<HistoricalDailyRow[]> {
-  const y = Number(monthStartIso.slice(0, 4));
-  const m = Number(monthStartIso.slice(5, 7)) - 1;
+export async function fetchHistoricalDay(
+  storeId: string,
+  dateIso: string
+): Promise<HistoricalDailyRow | null> {
+  const { data, error } = await supabase
+    .from("historical_daily_sales")
+    .select("store_id,date,net_sales,transactions")
+    .eq("store_id", storeId)
+    .eq("date", dateIso)
+    .maybeSingle();
 
-  const start = `${y}-${String(m + 1).padStart(2, "0")}-01`;
-  const next = new Date(y, m + 1, 1);
-  const end = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`;
-
-  return fetchHistoricalForRange(start, end, storeId);
+  if (error) throw error;
+  return data ? toRow(data) : null;
 }
