@@ -1,13 +1,16 @@
-// src/app/goals/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/shared/supabase/client";
 import { fetchStores, StoreRow } from "@/shared/db/stores";
-import { fetchDailyGoalsForMonthPublished, DailyGoalRow } from "@/shared/db/daily_goals";
-import { fetchMonthlyGoal, MonthlyGoalRow } from "@/shared/db/goals";
-import { fetchDailyActualsForRange, DailyActualRow } from "@/shared/db/actuals";
+import { fetchMonthlyGoal } from "@/shared/db/goals";
+import { DailyGoalRow, fetchDailyGoalsForMonthPublished } from "@/shared/db/daily_goals";
+import { fetchDailyActualsForMonth, DailyActualRow } from "@/shared/db/actuals";
+import { fetchHistoricalForRange, HistoricalDailyRow } from "@/shared/db/historical_daily_sales";
 
+/** ---------------------------
+ * Date helpers
+ * --------------------------*/
 function iso(d: Date) {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -22,13 +25,13 @@ function parseMonthStart(monthStartIso: string) {
   const m = Number(monthStartIso.slice(5, 7)) - 1;
   return new Date(y, m, 1);
 }
-function nextMonthStart(monthStartIso: string) {
-  const dt = parseMonthStart(monthStartIso);
-  return iso(new Date(dt.getFullYear(), dt.getMonth() + 1, 1));
-}
 function daysInMonth(monthStartIso: string) {
   const dt = parseMonthStart(monthStartIso);
   return new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
+}
+function nextMonthStart(monthStartIso: string) {
+  const dt = parseMonthStart(monthStartIso);
+  return iso(new Date(dt.getFullYear(), dt.getMonth() + 1, 1));
 }
 function ym(monthStartIso: string) {
   return monthStartIso.slice(0, 7);
@@ -42,66 +45,41 @@ function money2(n: number) {
 function int(n: number) {
   return n.toLocaleString();
 }
-function pct2(n: number) {
-  return `${(n * 100).toFixed(2)}%`;
-}
 function atv(sales: number, txns: number) {
   if (!txns) return 0;
   return sales / txns;
 }
-function isPastOrToday(dateIso: string) {
-  const todayIso = iso(new Date());
-  return dateIso <= todayIso;
+function sameOrBefore(aIso: string, bIso: string) {
+  // ISO date strings compare lexicographically
+  return aIso <= bIso;
 }
+
+/** ---------------------------
+ * Styles
+ * --------------------------*/
+const BG = "#f6f8fb";
+const CARD = "#ffffff";
+const BORDER = "1px solid #e8edf4";
+const SOFT_SHADOW = "0 1px 0 rgba(2,6,23,0.03), 0 10px 22px rgba(2,6,23,0.06)";
+const ACE_RED = "#dc2626";
+const ACE_GREEN = "#16a34a";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
-type HistRow = {
-  store_id: string;
-  date: string; // YYYY-MM-DD
-  net_sales: number;
-  transactions: number;
-};
-
-async function fetchHistoricalForRange(startIso: string, endIsoExclusive: string, storeId?: string) {
-  let q = supabase
-    .from("historical_daily_sales")
-    .select("store_id,date,net_sales,transactions")
-    .gte("date", startIso)
-    .lt("date", endIsoExclusive);
-
-  if (storeId) q = q.eq("store_id", storeId);
-
-  const { data, error } = await q;
-  if (error) throw error;
-
-  return (data ?? []).map((r: any) => ({
-    store_id: String(r.store_id),
-    date: String(r.date),
-    net_sales: Number(r.net_sales ?? 0),
-    transactions: Number(r.transactions ?? 0),
-  })) as HistRow[];
-}
-
 type DayCell = {
-  date: string;
+  date: string; // YYYY-MM-DD
   dayNum: number;
   dow: number;
 };
 
-function goalHitIndicator(
-  dateIso: string,
-  goalSales: number,
-  goalTxns: number,
-  actSales: number,
-  actTxns: number
-): "none" | "hit" | "miss" {
-  if (!isPastOrToday(dateIso)) return "none";
-  if ((actSales ?? 0) <= 0 && (actTxns ?? 0) <= 0) return "none"; // no actuals injected yet
-  const hitSales = Number(actSales ?? 0) >= Number(goalSales ?? 0);
-  const hitTxns = Number(actTxns ?? 0) >= Number(goalTxns ?? 0);
-  return hitSales && hitTxns ? "hit" : "miss";
-}
+type DrawerRow = {
+  sales_goal: number;
+  sales_actual: number;
+  trans_forecast: number; // goal txns
+  customer_count: number; // actual txns
+  atv_goal: number;
+  atv_actual: number;
+};
 
 export default function GoalsPage() {
   const [loading, setLoading] = useState(true);
@@ -111,29 +89,27 @@ export default function GoalsPage() {
   const [storeId, setStoreId] = useState<string>("");
   const [monthStart, setMonthStart] = useState<string>(iso(firstOfMonth(new Date())));
 
-  const [monthlyGoal, setMonthlyGoal] = useState<MonthlyGoalRow | null>(null);
-  const [goals, setGoals] = useState<DailyGoalRow[]>([]);
-  const [actuals, setActuals] = useState<DailyActualRow[]>([]);
-  const [ly, setLy] = useState<HistRow[]>([]);
+  const [monthlyNetSales, setMonthlyNetSales] = useState<number>(0);
+  const [monthlyTxns, setMonthlyTxns] = useState<number>(0);
 
-  // Drawer state
+  const [dailyGoals, setDailyGoals] = useState<DailyGoalRow[]>([]);
+  const [dailyActuals, setDailyActuals] = useState<DailyActualRow[]>([]);
+
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerBusy, setDrawerBusy] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [drawerDate, setDrawerDate] = useState<string>("");
 
-  const monthKey = useMemo(() => ym(monthStart), [monthStart]);
+  const [lyRow, setLyRow] = useState<HistoricalDailyRow | null>(null);
+
+  const todayIso = useMemo(() => iso(new Date()), []);
 
   const storeName = useMemo(() => {
     return stores.find((s) => s.store_id === storeId)?.store_name ?? storeId;
   }, [stores, storeId]);
 
-  const goalsByDate = useMemo(() => new Map(goals.map((g) => [g.goal_date, g])), [goals]);
-  const actualsByDate = useMemo(() => new Map(actuals.map((a) => [a.date, a])), [actuals]);
+  const monthKey = useMemo(() => ym(monthStart), [monthStart]);
 
-  // Map LY rows by their LY date (YYYY-MM-DD in LY month)
-  const lyByDate = useMemo(() => new Map(ly.map((r) => [r.date, r])), [ly]);
-
-  const calendar = useMemo(() => {
+  // Calendar grid cells
+  const calendarCells = useMemo(() => {
     const first = parseMonthStart(monthStart);
     const dim = daysInMonth(monthStart);
     const firstDow = first.getDay();
@@ -142,482 +118,428 @@ export default function GoalsPage() {
     for (let i = 0; i < firstDow; i++) out.push({ type: "blank" });
 
     for (let d = 1; d <= dim; d++) {
-      const date = iso(new Date(first.getFullYear(), first.getMonth(), d));
+      const dt = new Date(first.getFullYear(), first.getMonth(), d);
       out.push({
         type: "day",
-        cell: { date, dayNum: d, dow: new Date(first.getFullYear(), first.getMonth(), d).getDay() },
+        cell: { date: iso(dt), dayNum: d, dow: dt.getDay() },
       });
     }
     while (out.length % 7 !== 0) out.push({ type: "blank" });
     return out;
   }, [monthStart]);
 
-  const dailyTotals = useMemo(() => {
-    const sales = goals.reduce((a, g) => a + Number(g.net_sales_goal ?? 0), 0);
-    const txns = goals.reduce((a, g) => a + Number(g.transactions_goal ?? 0), 0);
-    return { sales, txns, atv: atv(sales, txns) };
-  }, [goals]);
+  const goalsByDate = useMemo(() => {
+    const m = new Map<string, DailyGoalRow>();
+    for (const r of dailyGoals) m.set(r.goal_date, r);
+    return m;
+  }, [dailyGoals]);
 
-  const mtdActuals = useMemo(() => {
-    const sales = actuals.reduce((a, r) => a + Number(r.net_sales_actual ?? 0), 0);
-    const txns = actuals.reduce((a, r) => a + Number(r.transactions_actual ?? 0), 0);
-    return { sales, txns, atv: atv(sales, txns) };
-  }, [actuals]);
-
-  const monthTxSum = useMemo(
-    () => goals.reduce((a, g) => a + Number(g.transactions_goal ?? 0), 0) || 0,
-    [goals]
-  );
+  const actualsByDate = useMemo(() => {
+    const m = new Map<string, DailyActualRow>();
+    for (const r of dailyActuals) m.set(r.business_date, r);
+    return m;
+  }, [dailyActuals]);
 
   useEffect(() => {
     (async () => {
-      try {
-        const { data } = await supabase.auth.getUser();
-        if (!data.user) {
-          window.location.href = "/auth/login";
-          return;
-        }
-        const rows = await fetchStores();
-        setStores(rows);
-        setStoreId(rows[0]?.store_id || "");
-        setLoading(false);
-      } catch (e: any) {
-        setMsg(e.message || "Failed to load.");
-        setLoading(false);
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        window.location.href = "/auth/login";
+        return;
       }
+      const rows = await fetchStores();
+      setStores(rows);
+      setStoreId(rows[0]?.store_id || "");
+      setLoading(false);
     })();
   }, []);
 
+  // Load monthly goal + published daily goals + actuals for month
   useEffect(() => {
     if (!storeId) return;
 
     (async () => {
       setMsg(null);
-      setLoading(true);
       try {
-        const start = monthStart;
-        const end = nextMonthStart(monthStart);
+        const mg = await fetchMonthlyGoal(storeId, monthStart);
+        setMonthlyNetSales(Number(mg?.net_sales_goal ?? 0));
+        setMonthlyTxns(Number(mg?.transactions_goal ?? 0));
 
-        // Monthly goal (authoritative monthly goal)
-        const mg = await fetchMonthlyGoal(storeId, start);
-        setMonthlyGoal(mg ?? null);
+        const dg = await fetchDailyGoalsForMonthPublished(storeId, monthStart);
+        setDailyGoals(dg);
 
-        // Published daily allocations (what the store sees)
-        const g = await fetchDailyGoalsForMonthPublished(storeId, start);
-        setGoals(g);
-
-        // Actuals (optional / may fail if table not created or RLS blocks)
-        try {
-          const a = await fetchDailyActualsForRange(storeId, start, end);
-          setActuals(a);
-        } catch (e: any) {
-          // Don't break goals page if actuals pipeline isn't ready yet
-          setActuals([]);
-          const em = String(e?.message ?? "");
-          if (em.toLowerCase().includes("daily_actuals")) {
-            setMsg((prev) => prev ?? "Actuals are not available yet (daily_actuals not ready / not accessible).");
-          } else {
-            setMsg((prev) => prev ?? "Actuals could not be loaded yet.");
-          }
-        }
-
-        // LY range
-        const dt = parseMonthStart(monthStart);
-        const lyStart = iso(new Date(dt.getFullYear() - 1, dt.getMonth(), 1));
-        const lyEnd = nextMonthStart(lyStart);
-
-        const lyRows = await fetchHistoricalForRange(lyStart, lyEnd, storeId);
-        setLy(lyRows);
+        const act = await fetchDailyActualsForMonth(storeId, monthStart);
+        setDailyActuals(act);
       } catch (e: any) {
-        setMsg(e.message || "Failed to load goals.");
-      } finally {
-        setLoading(false);
+        setMsg(e.message || "Failed loading goals/actuals.");
       }
     })();
   }, [storeId, monthStart]);
 
-  const openDrawerForDate = async (dateIso: string) => {
-    setDrawerBusy(true);
+  // Drawer: compute "today" side from goal+actual, and fetch LY
+  const drawerLeft: DrawerRow | null = useMemo(() => {
+    if (!drawerDate) return null;
+
+    const g = goalsByDate.get(drawerDate);
+    const a = actualsByDate.get(drawerDate);
+
+    const salesGoal = Number(g?.net_sales_goal ?? 0);
+    const txGoal = Number(g?.transactions_goal ?? 0);
+
+    const salesActual = Number(a?.net_sales_actual ?? 0);
+    const txActual = Number(a?.transactions_actual ?? 0);
+
+    return {
+      sales_goal: salesGoal,
+      sales_actual: salesActual,
+      trans_forecast: txGoal,
+      customer_count: txActual,
+      atv_goal: atv(salesGoal, txGoal),
+      atv_actual: atv(salesActual, txActual),
+    };
+  }, [drawerDate, goalsByDate, actualsByDate]);
+
+  const drawerLy: DrawerRow | null = useMemo(() => {
+    if (!drawerDate) return null;
+    if (!lyRow) {
+      return {
+        sales_goal: 0,
+        sales_actual: 0,
+        trans_forecast: 0,
+        customer_count: 0,
+        atv_goal: 0,
+        atv_actual: 0,
+      };
+    }
+
+    const sales = Number(lyRow.net_sales ?? 0);
+    const tx = Number(lyRow.transactions ?? 0);
+
+    return {
+      sales_goal: 0,
+      sales_actual: sales,
+      trans_forecast: 0,
+      customer_count: tx,
+      atv_goal: 0,
+      atv_actual: atv(sales, tx),
+    };
+  }, [drawerDate, lyRow]);
+
+  const openDrawer = async (dateIso: string) => {
+    setDrawerDate(dateIso);
+    setDrawerOpen(true);
+    setLyRow(null);
+
     try {
-      setSelectedDate(dateIso);
-      setDrawerOpen(true);
-    } finally {
-      setDrawerBusy(false);
+      const d = new Date(dateIso + "T00:00:00");
+      const ly = new Date(d.getFullYear() - 1, d.getMonth(), d.getDate());
+      const lyStart = iso(ly);
+      const lyEnd = iso(new Date(ly.getFullYear(), ly.getMonth(), ly.getDate() + 1));
+
+      const rows = await fetchHistoricalForRange(lyStart, lyEnd, storeId);
+      setLyRow(rows[0] ?? null);
+    } catch {
+      setLyRow(null);
     }
   };
 
-  const selectedLyDate = useMemo(() => {
-    if (!selectedDate) return "";
-    const d = new Date(selectedDate + "T00:00:00");
-    const lyD = new Date(d.getFullYear() - 1, d.getMonth(), d.getDate());
-    return iso(lyD);
-  }, [selectedDate]);
+  // Cell values: actuals for today/past, goals for future
+  function cellDisplay(dateIso: string) {
+    const g = goalsByDate.get(dateIso);
+    const a = actualsByDate.get(dateIso);
 
-  const selectedGoal = useMemo(
-    () => (selectedDate ? goalsByDate.get(selectedDate) : undefined),
-    [selectedDate, goalsByDate]
-  );
-  const selectedActual = useMemo(
-    () => (selectedDate ? actualsByDate.get(selectedDate) : undefined),
-    [selectedDate, actualsByDate]
-  );
-  const selectedLy = useMemo(
-    () => (selectedLyDate ? lyByDate.get(selectedLyDate) : undefined),
-    [selectedLyDate, lyByDate]
-  );
+    const isPastOrToday = sameOrBefore(dateIso, todayIso);
+
+    const salesGoal = Number(g?.net_sales_goal ?? 0);
+    const txGoal = Number(g?.transactions_goal ?? 0);
+
+    const salesActual = Number(a?.net_sales_actual ?? 0);
+    const txActual = Number(a?.transactions_actual ?? 0);
+
+    const showActual = isPastOrToday && a; // only use actual if row exists
+
+    const sales = showActual ? salesActual : salesGoal;
+    const tx = showActual ? txActual : txGoal;
+
+    // hit/miss indicator only for completed days with actuals present
+    let status: "hit" | "miss" | "none" = "none";
+    if (isPastOrToday && a) {
+      status = salesActual >= salesGoal ? "hit" : "miss";
+    }
+
+    return {
+      label: showActual ? "Actual" : "Goal",
+      sales,
+      tx,
+      atv: atv(sales, tx),
+      status,
+    };
+  }
 
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
 
-  const BORDER = "1px solid #e8edf4";
-  const BG = "#f6f8fb";
-  const CARD = "#ffffff";
-  const SOFT = "0 1px 0 rgba(2,6,23,0.03), 0 10px 22px rgba(2,6,23,0.06)";
-  const ACE_RED = "#dc2626";
-  const HIT_GREEN = "#16a34a";
-
-  const monthlySalesGoal = Number(monthlyGoal?.net_sales_goal ?? 0);
-  const monthlyTxGoal = Number(monthlyGoal?.transactions_goal ?? 0);
-  const monthlyAtvGoal = atv(monthlySalesGoal, monthlyTxGoal);
-
   return (
-    <div style={{ padding: 18, maxWidth: 1220, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+    <div style={{ padding: 24, maxWidth: 1240, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
         <div>
-          <div style={{ fontSize: 12, opacity: 0.75 }}>Goals</div>
-          <h1 style={{ margin: 0, fontSize: 22, letterSpacing: -0.3 }}>{storeName}</h1>
+          <h1 style={{ margin: 0, fontSize: 22, letterSpacing: -0.3 }}>Goals</h1>
           <div style={{ marginTop: 6, fontSize: 13, opacity: 0.75 }}>
-            Past/today shows actuals (when injected). Future shows goal allocations.
+            Past/today shows actuals when available. Future shows goal allocations.
           </div>
         </div>
-
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <select
-            value={storeId}
-            onChange={(e) => setStoreId(e.target.value)}
-            style={{ padding: "10px 12px", borderRadius: 12, border: BORDER, background: "white", minWidth: 240 }}
-          >
-            {stores.map((s) => (
-              <option key={s.store_id} value={s.store_id}>
-                {s.store_id} — {s.store_name}
-              </option>
-            ))}
-          </select>
-
-          <input
-            type="month"
-            value={monthKey}
-            onChange={(e) => setMonthStart(`${e.target.value}-01`)}
-            style={{ padding: "10px 12px", borderRadius: 12, border: BORDER, background: "white" }}
-          />
-        </div>
+        <a href="/home" style={{ fontWeight: 800 }}>
+          Home
+        </a>
       </div>
 
-      {msg ? (
-        <div style={{ marginTop: 10, color: ACE_RED, fontWeight: 800 }}>{msg}</div>
-      ) : null}
-
-      {/* Top summary */}
       <div
         style={{
-          marginTop: 14,
+          marginTop: 16,
+          padding: 16,
           border: BORDER,
           borderRadius: 16,
           background: CARD,
-          boxShadow: SOFT,
-          padding: 14,
+          boxShadow: SOFT_SHADOW,
         }}
       >
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <div style={{ fontWeight: 1100, fontSize: 13, opacity: 0.85 }}>Store Monthly Goal (authoritative)</div>
-            <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
-                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>Sales Goal</div>
-                <div style={{ marginTop: 4, fontWeight: 1200 }}>{money0(monthlySalesGoal)}</div>
-              </div>
-              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
-                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>Txns Goal</div>
-                <div style={{ marginTop: 4, fontWeight: 1200 }}>{int(monthlyTxGoal)}</div>
-              </div>
-              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
-                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>ATV Goal</div>
-                <div style={{ marginTop: 4, fontWeight: 1200 }}>{money2(monthlyAtvGoal)}</div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 10, fontSize: 11, opacity: 0.7 }}>
-              Daily allocations are a planning distribution and may not match the monthly goal exactly.
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontWeight: 1100, fontSize: 13, opacity: 0.85 }}>Daily Allocation Totals + MTD Actuals</div>
-
-            <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
-                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>Daily Sales Total</div>
-                <div style={{ marginTop: 4, fontWeight: 1200 }}>{money0(dailyTotals.sales)}</div>
-              </div>
-              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
-                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>Daily Txns Total</div>
-                <div style={{ marginTop: 4, fontWeight: 1200 }}>{int(dailyTotals.txns)}</div>
-              </div>
-              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
-                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>Daily ATV</div>
-                <div style={{ marginTop: 4, fontWeight: 1200 }}>{money2(dailyTotals.atv)}</div>
-              </div>
-            </div>
-
+        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 12, alignItems: "start" }}>
+          {/* LEFT: Monthly goal display (must be the saved monthly goal) */}
+          <div style={{ border: BORDER, borderRadius: 16, background: "#fbfcfe", padding: 12 }}>
+            <div style={{ fontWeight: 1100, fontSize: 13 }}>Store Monthly Goals</div>
             <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
-                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>MTD Sales Actual</div>
-                <div style={{ marginTop: 4, fontWeight: 1200 }}>{money0(mtdActuals.sales)}</div>
-              </div>
-              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
-                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>MTD Customer Count</div>
-                <div style={{ marginTop: 4, fontWeight: 1200 }}>{int(mtdActuals.txns)}</div>
-              </div>
-              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
-                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>MTD Actual ATV</div>
-                <div style={{ marginTop: 4, fontWeight: 1200 }}>{money2(mtdActuals.atv)}</div>
-              </div>
+              {[
+                { k: "Sales", v: money0(monthlyNetSales) },
+                { k: "Txns", v: int(monthlyTxns) },
+                { k: "ATV", v: money2(atv(monthlyNetSales, monthlyTxns)) },
+              ].map((x) => (
+                <div key={x.k} style={{ border: BORDER, borderRadius: 14, padding: 12, background: "white" }}>
+                  <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>{x.k}</div>
+                  <div style={{ marginTop: 4, fontSize: 14, fontWeight: 1200 }}>{x.v}</div>
+                </div>
+              ))}
             </div>
+          </div>
 
-            <div style={{ marginTop: 10, display: "flex", gap: 12, alignItems: "center", fontSize: 11, opacity: 0.7, flexWrap: "wrap" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 999, background: HIT_GREEN, display: "inline-block" }} />
-                Hit goal (sales + txns)
-              </span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 999, background: ACE_RED, display: "inline-block" }} />
-                Missed goal (sales or txns)
-              </span>
+          {/* RIGHT: Store/month controls */}
+          <div style={{ border: BORDER, borderRadius: 16, background: "white", padding: 12 }}>
+            <div style={{ fontWeight: 1100, marginBottom: 8 }}>Store</div>
+            <select
+              value={storeId}
+              onChange={(e) => setStoreId(e.target.value)}
+              style={{ width: "100%", padding: 10, borderRadius: 12, border: BORDER }}
+            >
+              {stores.map((s) => (
+                <option key={s.store_id} value={s.store_id}>
+                  {s.store_id} — {s.store_name}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ marginTop: 12, fontWeight: 1100, marginBottom: 8 }}>Month</div>
+            <input
+              type="month"
+              value={monthKey}
+              onChange={(e) => setMonthStart(`${e.target.value}-01`)}
+              style={{ width: "100%", padding: 10, borderRadius: 12, border: BORDER }}
+            />
+
+            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75, fontWeight: 900 }}>
+              {storeName} • {monthKey}
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Calendar */}
-      <div
-        style={{
-          marginTop: 12,
-          border: BORDER,
-          borderRadius: 16,
-          background: CARD,
-          boxShadow: SOFT,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(7, 1fr)",
-            background: "#fafafa",
-            borderBottom: "1px solid #eef2f7",
-          }}
-        >
-          {DOW.map((d) => (
-            <div key={d} style={{ padding: 12, fontWeight: 1100, fontSize: 12, color: "#334155" }}>
-              {d}
-            </div>
-          ))}
-        </div>
+        {msg ? (
+          <div style={{ marginTop: 12, color: ACE_RED, fontWeight: 900 }}>
+            {msg}
+          </div>
+        ) : null}
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
-          {calendar.map((c, idx) => {
-            if (c.type === "blank") {
+        {/* Calendar */}
+        <div style={{ marginTop: 14, border: BORDER, borderRadius: 16, overflow: "hidden" }}>
+          {/* DOW header */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", background: "#fafafa", borderBottom: "1px solid #eef2f7" }}>
+            {DOW.map((d) => (
+              <div key={d} style={{ padding: 12, fontWeight: 1100, fontSize: 12, color: "#334155" }}>
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Cells */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
+            {calendarCells.map((c, idx) => {
+              if (c.type === "blank") {
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      height: 96,
+                      borderBottom: "1px solid #f1f5f9",
+                      borderRight: idx % 7 !== 6 ? "1px solid #f1f5f9" : "none",
+                      background: "white",
+                    }}
+                  />
+                );
+              }
+
+              const { date, dayNum } = c.cell;
+              const disp = cellDisplay(date);
+
+              const statusBar =
+                disp.status === "hit"
+                  ? ACE_GREEN
+                  : disp.status === "miss"
+                    ? ACE_RED
+                    : "transparent";
+
               return (
-                <div
-                  key={`b-${idx}`}
+                <button
+                  key={date}
+                  onClick={() => openDrawer(date)}
                   style={{
-                    height: 124,
+                    height: 96,
+                    padding: 12,
+                    textAlign: "left",
+                    border: "none",
+                    background: "white",
                     borderBottom: "1px solid #f1f5f9",
                     borderRight: idx % 7 !== 6 ? "1px solid #f1f5f9" : "none",
-                    background: "white",
+                    cursor: "pointer",
+                    position: "relative",
                   }}
-                />
-              );
-            }
-
-            const { date, dayNum } = c.cell;
-            const g = goalsByDate.get(date);
-            const a = actualsByDate.get(date);
-
-            const goalTx = Number(g?.transactions_goal ?? 0);
-            const goalSales = Number(g?.net_sales_goal ?? 0);
-
-            const actTx = Number(a?.transactions_actual ?? 0);
-            const actSales = Number(a?.net_sales_actual ?? 0);
-
-            const share = monthTxSum > 0 ? goalTx / monthTxSum : 0;
-
-            const showActual = isPastOrToday(date);
-            const topSales = showActual ? actSales : goalSales;
-            const topTx = showActual ? actTx : goalTx;
-
-            const topAtv = atv(topSales, topTx);
-
-            const status = goalHitIndicator(date, goalSales, goalTx, actSales, actTx);
-            const statusDot =
-              status === "hit" ? HIT_GREEN : status === "miss" ? ACE_RED : "transparent";
-
-            const rightLabel = showActual ? "Actual" : "Goal";
-
-            return (
-              <button
-                key={date}
-                onClick={() => openDrawerForDate(date)}
-                disabled={drawerBusy}
-                style={{
-                  height: 124,
-                  padding: 12,
-                  textAlign: "left",
-                  border: "none",
-                  background: "white",
-                  borderBottom: "1px solid #f1f5f9",
-                  borderRight: idx % 7 !== 6 ? "1px solid #f1f5f9" : "none",
-                  cursor: "pointer",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontWeight: 1200 }}>{dayNum}</span>
-                    <span
-                      aria-label={status}
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 999,
-                        background: statusDot,
-                        border: "1px solid #e5e7eb",
-                        display: "inline-block",
-                      }}
-                    />
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 3,
+                      background: statusBar,
+                    }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <div style={{ fontWeight: 1200 }}>{dayNum}</div>
+                    <div style={{ fontSize: 11, opacity: 0.7, fontWeight: 900 }}>{disp.label}</div>
                   </div>
-                  <div style={{ fontSize: 10, opacity: 0.65 }}>{pct2(share)}</div>
-                </div>
 
-                <div style={{ marginTop: 8, lineHeight: 1.25 }}>
-                  <div style={{ fontWeight: 1100 }}>{money0(topSales)}</div>
-                  <div style={{ fontSize: 12, opacity: 0.9 }}>{int(topTx)} txns</div>
-                  <div style={{ fontSize: 11, opacity: 0.75 }}>ATV {money2(topAtv)}</div>
-                </div>
+                  <div style={{ marginTop: 6, fontSize: 12, fontWeight: 1100 }}>
+                    {money0(disp.sales)}
+                  </div>
+                  <div style={{ marginTop: 2, fontSize: 11, opacity: 0.8 }}>
+                    {int(disp.tx)} txns
+                  </div>
+                  <div style={{ marginTop: 2, fontSize: 11, opacity: 0.75 }}>
+                    ATV {money2(disp.atv)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-                <div style={{ marginTop: 8, fontSize: 10, opacity: 0.65 }}>
-                  {rightLabel}
-                  {showActual ? "" : ""}
-                </div>
-              </button>
-            );
-          })}
+        <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
+          Note: Past/today shows actuals when injected. Future days show goal allocations.
         </div>
       </div>
 
-      {/* Drawer (floating panel) */}
+      {/* Drawer */}
       {drawerOpen ? (
         <div
           onClick={() => setDrawerOpen(false)}
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(2,6,23,0.38)",
-            zIndex: 60,
+            background: "rgba(2,6,23,0.42)",
             display: "flex",
+            alignItems: "stretch",
             justifyContent: "flex-end",
+            zIndex: 60,
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: "min(520px, 92vw)",
-              height: "100vh",
+              width: "min(720px, 96vw)",
               background: "white",
               borderLeft: BORDER,
-              display: "flex",
-              flexDirection: "column",
+              boxShadow: "0 0 0 1px rgba(2,6,23,0.05), 0 20px 60px rgba(2,6,23,0.25)",
+              padding: 16,
+              overflowY: "auto",
             }}
           >
-            <div style={{ padding: 14, borderBottom: "1px solid #eef2f7", background: "#fbfbfc" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 1200, fontSize: 14, letterSpacing: -0.2 }}>
-                    {storeName} • {selectedDate}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <div style={{ fontWeight: 1300, fontSize: 16 }}>
+                Daily Details • {storeName}
+              </div>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 12,
+                  border: BORDER,
+                  background: "white",
+                  fontWeight: 1000,
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75, fontWeight: 900 }}>
+              {drawerDate}
+            </div>
+
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {/* Left: Today */}
+              <div style={{ border: BORDER, borderRadius: 16, padding: 12, background: "#fbfcfe" }}>
+                <div style={{ fontWeight: 1200, marginBottom: 10 }}>Today</div>
+
+                {drawerLeft ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <Card k="Sales Goal" v={money0(drawerLeft.sales_goal)} />
+                    <Card k="Sales Actual" v={money0(drawerLeft.sales_actual)} />
+                    <Card k="Trans Forecast" v={int(drawerLeft.trans_forecast)} />
+                    <Card k="Customer Count" v={int(drawerLeft.customer_count)} />
+                    <Card k="ATV Goal" v={money2(drawerLeft.atv_goal)} />
+                    <Card k="Actual ATV" v={money2(drawerLeft.atv_actual)} />
                   </div>
-                  <div style={{ marginTop: 2, fontSize: 11, opacity: 0.7 }}>
-                    Day details (Today vs LY)
-                  </div>
+                ) : (
+                  <div style={{ opacity: 0.7 }}>No data.</div>
+                )}
+              </div>
+
+              {/* Right: LY */}
+              <div style={{ border: BORDER, borderRadius: 16, padding: 12, background: "#fbfcfe" }}>
+                <div style={{ fontWeight: 1200, marginBottom: 2 }}>LY</div>
+                <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 900, marginBottom: 10 }}>
+                  {(() => {
+                    if (!drawerDate) return "";
+                    const d = new Date(drawerDate + "T00:00:00");
+                    const ly = new Date(d.getFullYear() - 1, d.getMonth(), d.getDate());
+                    return iso(ly);
+                  })()}
                 </div>
 
-                <button
-                  onClick={() => setDrawerOpen(false)}
-                  style={{
-                    padding: "9px 11px",
-                    borderRadius: 12,
-                    border: BORDER,
-                    background: "white",
-                    fontWeight: 1100,
-                    cursor: "pointer",
-                  }}
-                >
-                  Close
-                </button>
+                {drawerLy ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <Card k="Sales Goal" v="—" />
+                    <Card k="Sales Actual" v={drawerLy.sales_actual ? money0(drawerLy.sales_actual) : "$0"} />
+                    <Card k="Trans Forecast" v="—" />
+                    <Card k="Customer Count" v={drawerLy.customer_count ? int(drawerLy.customer_count) : "0"} />
+                    <Card k="ATV Goal" v="—" />
+                    <Card k="Actual ATV" v={drawerLy.atv_actual ? money2(drawerLy.atv_actual) : "$0.00"} />
+                  </div>
+                ) : (
+                  <div style={{ opacity: 0.7 }}>No LY data.</div>
+                )}
               </div>
             </div>
 
-            <div style={{ padding: 14, background: BG, overflowY: "auto", flex: 1 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                {/* Today */}
-                <div style={{ border: BORDER, borderRadius: 14, background: "white", padding: 12 }}>
-                  <div style={{ fontWeight: 1200, fontSize: 12, opacity: 0.85 }}>Today</div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                    <Metric label="Sales Goal" value={money0(Number(selectedGoal?.net_sales_goal ?? 0))} />
-                    <Metric label="Sales Actual" value={money0(Number(selectedActual?.net_sales_actual ?? 0))} />
-                    <Metric label="Trans Forecast" value={int(Number(selectedGoal?.transactions_goal ?? 0))} />
-                    <Metric label="Customer Count" value={int(Number(selectedActual?.transactions_actual ?? 0))} />
-                    <Metric
-                      label="ATV Goal"
-                      value={money2(
-                        atv(
-                          Number(selectedGoal?.net_sales_goal ?? 0),
-                          Number(selectedGoal?.transactions_goal ?? 0)
-                        )
-                      )}
-                    />
-                    <Metric
-                      label="Actual ATV"
-                      value={money2(
-                        atv(
-                          Number(selectedActual?.net_sales_actual ?? 0),
-                          Number(selectedActual?.transactions_actual ?? 0)
-                        )
-                      )}
-                    />
-                  </div>
-                </div>
-
-                {/* LY */}
-                <div style={{ border: BORDER, borderRadius: 14, background: "white", padding: 12 }}>
-                  <div style={{ fontWeight: 1200, fontSize: 12, opacity: 0.85 }}>LY</div>
-                  <div style={{ marginTop: 2, fontSize: 11, opacity: 0.65 }}>{selectedLyDate || "—"}</div>
-
-                  <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                    <Metric label="Sales Goal" value="—" />
-                    <Metric label="Sales Actual" value={money0(Number(selectedLy?.net_sales ?? 0))} />
-                    <Metric label="Trans Forecast" value="—" />
-                    <Metric label="Customer Count" value={int(Number(selectedLy?.transactions ?? 0))} />
-                    <Metric label="ATV Goal" value="—" />
-                    <Metric
-                      label="Actual ATV"
-                      value={money2(atv(Number(selectedLy?.net_sales ?? 0), Number(selectedLy?.transactions ?? 0)))}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ marginTop: 12, fontSize: 11, opacity: 0.7 }}>
-                Notes: Past/today will show actuals on the calendar when injected. Future days show goal allocations.
-              </div>
+            <div style={{ marginTop: 12, fontSize: 12, opacity: 0.75 }}>
+              Notes: Past/today will show actuals on the calendar when injected. Future days show goal allocations.
             </div>
           </div>
         </div>
@@ -626,11 +548,11 @@ export default function GoalsPage() {
   );
 }
 
-function Metric(props: { label: string; value: string }) {
+function Card({ k, v }: { k: string; v: string }) {
   return (
-    <div style={{ border: "1px solid #eef2f7", borderRadius: 12, padding: 10, background: "#fbfcfe" }}>
-      <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>{props.label}</div>
-      <div style={{ marginTop: 4, fontWeight: 1200 }}>{props.value}</div>
+    <div style={{ border: "1px solid #e8edf4", borderRadius: 14, padding: 12, background: "white" }}>
+      <div style={{ fontSize: 11, opacity: 0.7, fontWeight: 1000 }}>{k}</div>
+      <div style={{ marginTop: 6, fontWeight: 1200, fontSize: 14 }}>{v}</div>
     </div>
   );
 }
