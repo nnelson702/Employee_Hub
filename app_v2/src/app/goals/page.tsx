@@ -29,10 +29,6 @@ function daysInMonth(monthStartIso: string) {
   const dt = parseMonthStart(monthStartIso);
   return new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
 }
-function nextMonthStart(monthStartIso: string) {
-  const dt = parseMonthStart(monthStartIso);
-  return iso(new Date(dt.getFullYear(), dt.getMonth() + 1, 1));
-}
 function ym(monthStartIso: string) {
   return monthStartIso.slice(0, 7);
 }
@@ -50,15 +46,12 @@ function atv(sales: number, txns: number) {
   return sales / txns;
 }
 function sameOrBefore(aIso: string, bIso: string) {
-  // ISO date strings compare lexicographically
-  return aIso <= bIso;
+  return aIso <= bIso; // ISO string compare is safe for YYYY-MM-DD
 }
 
 /** ---------------------------
  * Styles
  * --------------------------*/
-const BG = "#f6f8fb";
-const CARD = "#ffffff";
 const BORDER = "1px solid #e8edf4";
 const SOFT_SHADOW = "0 1px 0 rgba(2,6,23,0.03), 0 10px 22px rgba(2,6,23,0.06)";
 const ACE_RED = "#dc2626";
@@ -75,8 +68,8 @@ type DayCell = {
 type DrawerRow = {
   sales_goal: number;
   sales_actual: number;
-  trans_forecast: number; // goal txns
-  customer_count: number; // actual txns
+  trans_forecast: number;
+  customer_count: number;
   atv_goal: number;
   atv_actual: number;
 };
@@ -99,14 +92,14 @@ export default function GoalsPage() {
   const [drawerDate, setDrawerDate] = useState<string>("");
 
   const [lyRow, setLyRow] = useState<HistoricalDailyRow | null>(null);
+  const [lySource, setLySource] = useState<"store" | "company" | "none">("none");
 
   const todayIso = useMemo(() => iso(new Date()), []);
+  const monthKey = useMemo(() => ym(monthStart), [monthStart]);
 
   const storeName = useMemo(() => {
     return stores.find((s) => s.store_id === storeId)?.store_name ?? storeId;
   }, [stores, storeId]);
-
-  const monthKey = useMemo(() => ym(monthStart), [monthStart]);
 
   // Calendar grid cells
   const calendarCells = useMemo(() => {
@@ -176,7 +169,7 @@ export default function GoalsPage() {
     })();
   }, [storeId, monthStart]);
 
-  // Drawer: compute "today" side from goal+actual, and fetch LY
+  /** Drawer: compute Today side from goal+actual */
   const drawerLeft: DrawerRow | null = useMemo(() => {
     if (!drawerDate) return null;
 
@@ -199,18 +192,10 @@ export default function GoalsPage() {
     };
   }, [drawerDate, goalsByDate, actualsByDate]);
 
+  /** Drawer: LY side based on historical_daily_sales (store-first, company fallback) */
   const drawerLy: DrawerRow | null = useMemo(() => {
     if (!drawerDate) return null;
-    if (!lyRow) {
-      return {
-        sales_goal: 0,
-        sales_actual: 0,
-        trans_forecast: 0,
-        customer_count: 0,
-        atv_goal: 0,
-        atv_actual: 0,
-      };
-    }
+    if (!lyRow) return null;
 
     const sales = Number(lyRow.net_sales ?? 0);
     const tx = Number(lyRow.transactions ?? 0);
@@ -225,21 +210,55 @@ export default function GoalsPage() {
     };
   }, [drawerDate, lyRow]);
 
+  const lyDateIso = useMemo(() => {
+    if (!drawerDate) return "";
+    const d = new Date(drawerDate + "T00:00:00");
+    const ly = new Date(d.getFullYear() - 1, d.getMonth(), d.getDate());
+    return iso(ly);
+  }, [drawerDate]);
+
   const openDrawer = async (dateIso: string) => {
     setDrawerDate(dateIso);
     setDrawerOpen(true);
+
     setLyRow(null);
+    setLySource("none");
 
     try {
-      const d = new Date(dateIso + "T00:00:00");
-      const ly = new Date(d.getFullYear() - 1, d.getMonth(), d.getDate());
-      const lyStart = iso(ly);
-      const lyEnd = iso(new Date(ly.getFullYear(), ly.getMonth(), ly.getDate() + 1));
+      const lyStart = lyDateIso || (() => {
+        const d = new Date(dateIso + "T00:00:00");
+        const ly = new Date(d.getFullYear() - 1, d.getMonth(), d.getDate());
+        return iso(ly);
+      })();
 
-      const rows = await fetchHistoricalForRange(lyStart, lyEnd, storeId);
-      setLyRow(rows[0] ?? null);
+      const lyEnd = iso(new Date(lyStart + "T00:00:00"));
+      const endDate = new Date(lyEnd + "T00:00:00");
+      endDate.setDate(endDate.getDate() + 1);
+      const lyEndExclusive = iso(endDate);
+
+      // 1) Store-specific first
+      const storeRows = await fetchHistoricalForRange(lyStart, lyEndExclusive, storeId);
+      if (storeRows.length) {
+        setLyRow(storeRows[0]);
+        setLySource("store");
+        return;
+      }
+
+      // 2) Company fallback (no store filter) — better than showing blanks
+      const companyRows = await fetchHistoricalForRange(lyStart, lyEndExclusive, null);
+      if (companyRows.length) {
+        // If multiple stores exist, we’ll still take the first row;
+        // we can refine later if you want a company aggregate instead.
+        setLyRow(companyRows[0]);
+        setLySource("company");
+        return;
+      }
+
+      setLyRow(null);
+      setLySource("none");
     } catch {
       setLyRow(null);
+      setLySource("none");
     }
   };
 
@@ -256,12 +275,11 @@ export default function GoalsPage() {
     const salesActual = Number(a?.net_sales_actual ?? 0);
     const txActual = Number(a?.transactions_actual ?? 0);
 
-    const showActual = isPastOrToday && a; // only use actual if row exists
+    const showActual = isPastOrToday && !!a;
 
     const sales = showActual ? salesActual : salesGoal;
     const tx = showActual ? txActual : txGoal;
 
-    // hit/miss indicator only for completed days with actuals present
     let status: "hit" | "miss" | "none" = "none";
     if (isPastOrToday && a) {
       status = salesActual >= salesGoal ? "hit" : "miss";
@@ -298,7 +316,7 @@ export default function GoalsPage() {
           padding: 16,
           border: BORDER,
           borderRadius: 16,
-          background: CARD,
+          background: "#ffffff",
           boxShadow: SOFT_SHADOW,
         }}
       >
@@ -358,7 +376,14 @@ export default function GoalsPage() {
         {/* Calendar */}
         <div style={{ marginTop: 14, border: BORDER, borderRadius: 16, overflow: "hidden" }}>
           {/* DOW header */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", background: "#fafafa", borderBottom: "1px solid #eef2f7" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              background: "#fafafa",
+              borderBottom: "1px solid #eef2f7",
+            }}
+          >
             {DOW.map((d) => (
               <div key={d} style={{ padding: 12, fontWeight: 1100, fontSize: 12, color: "#334155" }}>
                 {d}
@@ -387,11 +412,7 @@ export default function GoalsPage() {
               const disp = cellDisplay(date);
 
               const statusBar =
-                disp.status === "hit"
-                  ? ACE_GREEN
-                  : disp.status === "miss"
-                    ? ACE_RED
-                    : "transparent";
+                disp.status === "hit" ? ACE_GREEN : disp.status === "miss" ? ACE_RED : "transparent";
 
               return (
                 <button
@@ -424,15 +445,9 @@ export default function GoalsPage() {
                     <div style={{ fontSize: 11, opacity: 0.7, fontWeight: 900 }}>{disp.label}</div>
                   </div>
 
-                  <div style={{ marginTop: 6, fontSize: 12, fontWeight: 1100 }}>
-                    {money0(disp.sales)}
-                  </div>
-                  <div style={{ marginTop: 2, fontSize: 11, opacity: 0.8 }}>
-                    {int(disp.tx)} txns
-                  </div>
-                  <div style={{ marginTop: 2, fontSize: 11, opacity: 0.75 }}>
-                    ATV {money2(disp.atv)}
-                  </div>
+                  <div style={{ marginTop: 6, fontSize: 12, fontWeight: 1100 }}>{money0(disp.sales)}</div>
+                  <div style={{ marginTop: 2, fontSize: 11, opacity: 0.8 }}>{int(disp.tx)} txns</div>
+                  <div style={{ marginTop: 2, fontSize: 11, opacity: 0.75 }}>ATV {money2(disp.atv)}</div>
                 </button>
               );
             })}
@@ -471,7 +486,7 @@ export default function GoalsPage() {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <div style={{ fontWeight: 1300, fontSize: 16 }}>
-                Daily Details • {storeName}
+                {storeName} • {drawerDate}
               </div>
               <button
                 onClick={() => setDrawerOpen(false)}
@@ -489,7 +504,7 @@ export default function GoalsPage() {
             </div>
 
             <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75, fontWeight: 900 }}>
-              {drawerDate}
+              Day details (Today vs LY)
             </div>
 
             <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -513,28 +528,25 @@ export default function GoalsPage() {
 
               {/* Right: LY */}
               <div style={{ border: BORDER, borderRadius: 16, padding: 12, background: "#fbfcfe" }}>
-                <div style={{ fontWeight: 1200, marginBottom: 2 }}>LY</div>
-                <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 900, marginBottom: 10 }}>
-                  {(() => {
-                    if (!drawerDate) return "";
-                    const d = new Date(drawerDate + "T00:00:00");
-                    const ly = new Date(d.getFullYear() - 1, d.getMonth(), d.getDate());
-                    return iso(ly);
-                  })()}
+                {/* LY header + date same line */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                  <div style={{ fontWeight: 1200 }}>LY</div>
+                  <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 900 }}>{lyDateIso}</div>
                 </div>
 
-                {drawerLy ? (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <Card k="Sales Goal" v="—" />
-                    <Card k="Sales Actual" v={drawerLy.sales_actual ? money0(drawerLy.sales_actual) : "$0"} />
-                    <Card k="Trans Forecast" v="—" />
-                    <Card k="Customer Count" v={drawerLy.customer_count ? int(drawerLy.customer_count) : "0"} />
-                    <Card k="ATV Goal" v="—" />
-                    <Card k="Actual ATV" v={drawerLy.atv_actual ? money2(drawerLy.atv_actual) : "$0.00"} />
-                  </div>
-                ) : (
-                  <div style={{ opacity: 0.7 }}>No LY data.</div>
-                )}
+                {/* optional tiny source hint (kept subtle) */}
+                <div style={{ marginTop: 6, fontSize: 11, opacity: 0.6 }}>
+                  {lySource === "store" ? "Store LY" : lySource === "company" ? "Company LY (fallback)" : "No LY data"}
+                </div>
+
+                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                  <Card k="Sales Goal" v="—" />
+                  <Card k="Sales Actual" v={drawerLy ? money0(drawerLy.sales_actual) : "—"} />
+                  <Card k="Trans Forecast" v="—" />
+                  <Card k="Customer Count" v={drawerLy ? int(drawerLy.customer_count) : "—"} />
+                  <Card k="ATV Goal" v="—" />
+                  <Card k="Actual ATV" v={drawerLy ? money2(drawerLy.atv_actual) : "—"} />
+                </div>
               </div>
             </div>
 
@@ -550,7 +562,7 @@ export default function GoalsPage() {
 
 function Card({ k, v }: { k: string; v: string }) {
   return (
-    <div style={{ border: "1px solid #e8edf4", borderRadius: 14, padding: 12, background: "white" }}>
+    <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "white" }}>
       <div style={{ fontSize: 11, opacity: 0.7, fontWeight: 1000 }}>{k}</div>
       <div style={{ marginTop: 6, fontWeight: 1200, fontSize: 14 }}>{v}</div>
     </div>
