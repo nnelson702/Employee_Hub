@@ -1,293 +1,236 @@
-// src/app/goals/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/shared/supabase/client";
-import { fetchStores, StoreRow } from "@/shared/db/stores";
-import { fetchMonthlyGoal } from "@/shared/db/goals";
-import { fetchDailyGoalsForMonthPublished, DailyGoalRow } from "@/shared/db/daily_goals";
-import { fetchDailyActualsForRange, DailyActualRow } from "@/shared/db/actuals";
-import { fetchHistoricalRange, HistoricalDailyRow } from "@/shared/db/historical_daily_sales";
+import React, { useEffect, useMemo, useState } from "react";
+import { fetchStores, type StoreRow } from "../../shared/db/stores";
+import { fetchMonthlyGoal, type MonthlyGoalRow } from "../../shared/db/goals";
+import { fetchDailyGoalsForMonthPublished, type DailyGoalRow } from "../../shared/db/daily_goals";
+import { fetchActualsForMonth, type DailyActualRow } from "../../shared/db/actuals";
+import { fetchHistoricalForRange, type HistoricalDailyRow } from "../../shared/db/historical_daily_sales";
 
 function iso(d: Date) {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
-function ym(monthStartIso: string) {
-  return monthStartIso.slice(0, 7);
+
+function monthStartFromMonthKey(monthKey: string) {
+  return `${monthKey}-01`;
 }
-function parseMonthStart(monthStartIso: string) {
-  const y = Number(monthStartIso.slice(0, 4));
-  const m = Number(monthStartIso.slice(5, 7)) - 1;
-  return new Date(y, m, 1);
-}
-function nextMonthStart(monthStartIso: string) {
-  const dt = parseMonthStart(monthStartIso);
-  return iso(new Date(dt.getFullYear(), dt.getMonth() + 1, 1));
-}
-function daysInMonth(monthStartIso: string) {
-  const dt = parseMonthStart(monthStartIso);
-  return new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
-}
-function money0(n: number) {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-}
-function money2(n: number) {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
-}
-function int(n: number) {
-  return n.toLocaleString();
-}
+
 function atv(sales: number, txns: number) {
   if (!txns) return 0;
   return sales / txns;
 }
-function isPastOrToday(dateIso: string) {
-  const todayIso = iso(new Date());
-  return dateIso <= todayIso;
+
+function money0(n: number) {
+  return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
-function addYears(dateIso: string, yearsDelta: number) {
-  const d = new Date(dateIso + "T00:00:00");
-  return iso(new Date(d.getFullYear() + yearsDelta, d.getMonth(), d.getDate()));
+function money2(n: number) {
+  return n.toLocaleString(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function int(n: number) {
+  return Math.round(n).toLocaleString();
 }
 
-const BORDER = "1px solid #e5e7eb";
-const SHADOW = "0 1px 0 rgba(2,6,23,0.03), 0 14px 40px rgba(2,6,23,0.08)";
-const PAGE_MAX = 1180;
-
-const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-
-type DayDetails = {
-  dateIso: string;
-  storeId: string;
-  storeName: string;
-
-  salesGoal: number;
-  txnsGoal: number;
-
-  salesActual: number;
-  txnsActual: number; // also used for customer count if you don’t have a separate field yet
-
-  lyDateIso: string;
-  lySales: number;
-  lyTxns: number;
-};
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function addMonths(d: Date, months: number) {
+  return new Date(d.getFullYear(), d.getMonth() + months, 1);
+}
 
 export default function GoalsPage() {
-  const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState<string | null>(null);
+  const todayIso = useMemo(() => iso(new Date()), []);
 
   const [stores, setStores] = useState<StoreRow[]>([]);
-  const [storeId, setStoreId] = useState<string>("");
+  const [storeId, setStoreId] = useState<string>("18228");
+
   const [monthStart, setMonthStart] = useState<string>(() => {
-    const d = new Date();
-    return iso(new Date(d.getFullYear(), d.getMonth(), 1));
+    const now = new Date();
+    return iso(startOfMonth(now));
   });
+  const monthKey = useMemo(() => monthStart.slice(0, 7), [monthStart]);
 
-  const [monthlyNetSales, setMonthlyNetSales] = useState<number>(0);
-  const [monthlyTxns, setMonthlyTxns] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [msg, setMsg] = useState<string>("");
 
+  const [monthlyGoal, setMonthlyGoal] = useState<MonthlyGoalRow | null>(null);
   const [dailyGoals, setDailyGoals] = useState<DailyGoalRow[]>([]);
   const [dailyActuals, setDailyActuals] = useState<DailyActualRow[]>([]);
   const [lyRows, setLyRows] = useState<HistoricalDailyRow[]>([]);
 
+  // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedDay, setSelectedDay] = useState<DayDetails | null>(null);
-
-  const storeName = useMemo(() => stores.find((s) => s.store_id === storeId)?.store_name ?? storeId, [stores, storeId]);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        window.location.href = "/auth/login";
-        return;
-      }
-      const rows = await fetchStores();
-      setStores(rows);
-      setStoreId(rows[0]?.store_id || "");
-      setLoading(false);
-    })();
-  }, []);
+  const [drawerBusy, setDrawerBusy] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>("");
 
   useEffect(() => {
-    if (!storeId) return;
-    (async () => {
-      setMsg(null);
+    let alive = true;
+
+    async function load() {
+      setLoading(true);
+      setMsg("");
       try {
-        // Monthly goal (store goal) — always source of truth for “Store Monthly Goals”
-        const m = await fetchMonthlyGoal(storeId, monthStart);
-        setMonthlyNetSales(Number(m?.net_sales_goal ?? 0));
-        setMonthlyTxns(Number(m?.transactions_goal ?? 0));
+        const s = await fetchStores();
+        if (!alive) return;
+        setStores(s);
 
-        // Published daily goals for the month (forecast allocations)
+        // monthly goal for selected store/month
+        const mg = await fetchMonthlyGoal(storeId, monthStart);
+        if (!alive) return;
+        setMonthlyGoal(mg ?? null);
+
+        // published goals for month (store-facing)
         const goals = await fetchDailyGoalsForMonthPublished(storeId, monthStart);
-        setDailyGoals(goals);
+        if (!alive) return;
+        setDailyGoals(goals ?? []);
 
-        // Actuals in-range (daily_actuals.business_date)
-        const end = nextMonthStart(monthStart);
-        const actuals = await fetchDailyActualsForRange(storeId, monthStart, end);
-        setDailyActuals(actuals);
+        // actuals for month (business_date)
+        const acts = await fetchActualsForMonth(storeId, monthStart);
+        if (!alive) return;
+        setDailyActuals(acts ?? []);
 
-        // LY historical for same month window (historical_daily_sales.date)
-        const dt = parseMonthStart(monthStart);
-        const lyStart = iso(new Date(dt.getFullYear() - 1, dt.getMonth(), 1));
-        const lyEnd = nextMonthStart(lyStart);
-        const hist = await fetchHistoricalRange(storeId, lyStart, lyEnd);
-        setLyRows(hist);
+        // LY actuals for same month prior year (historical_daily_sales.date)
+        const d = new Date(monthStart + "T00:00:00");
+        const lyStart = new Date(d.getFullYear() - 1, d.getMonth(), 1);
+        const lyEnd = new Date(d.getFullYear() - 1, d.getMonth() + 1, 1);
+        const lyStartIso = iso(lyStart);
+        const lyEndIso = iso(lyEnd);
+
+        const ly = await fetchHistoricalForRange({
+          storeId,
+          startDate: lyStartIso,
+          endDateExclusive: lyEndIso,
+        });
+        if (!alive) return;
+        setLyRows(ly ?? []);
       } catch (e: any) {
-        setMsg(e?.message || "Failed loading goals/actuals.");
+        console.error(e);
+        setMsg(e?.message ?? "Failed to load goals");
+      } finally {
+        if (alive) setLoading(false);
       }
-    })();
+    }
+
+    load();
+    return () => {
+      alive = false;
+    };
   }, [storeId, monthStart]);
 
-  const dailyGoalsMap = useMemo(() => new Map(dailyGoals.map((r) => [r.goal_date, r])), [dailyGoals]);
-  const dailyActualsMap = useMemo(() => new Map(dailyActuals.map((r) => [r.business_date, r])), [dailyActuals]);
-  const lyMap = useMemo(() => new Map(lyRows.map((r) => [r.date, r])), [lyRows]);
+  const storeName = useMemo(() => {
+    const s = stores.find((x) => String(x.store_id) === String(storeId));
+    return s ? `${s.store_name} • ${monthKey}` : `Store ${storeId} • ${monthKey}`;
+  }, [stores, storeId, monthKey]);
 
-  // Daily totals (true math of allocations shown)
-  const dailyTotals = useMemo(() => {
-    const s = dailyGoals.reduce((a, r) => a + Number(r.net_sales_goal ?? 0), 0);
-    const t = dailyGoals.reduce((a, r) => a + Number(r.transactions_goal ?? 0), 0);
-    return { sales: s, txns: t, atv: atv(s, t) };
+  const goalsByDate = useMemo(() => {
+    const m = new Map<string, DailyGoalRow>();
+    for (const g of dailyGoals) m.set(g.goal_date, g);
+    return m;
   }, [dailyGoals]);
 
-  const calendarCells = useMemo(() => {
-    const first = parseMonthStart(monthStart);
-    const dim = daysInMonth(monthStart);
-    const firstDow = first.getDay();
+  const actualsByDate = useMemo(() => {
+    const m = new Map<string, DailyActualRow>();
+    for (const a of dailyActuals) m.set(a.business_date, a);
+    return m;
+  }, [dailyActuals]);
 
-    const out: Array<{ type: "blank" } | { type: "day"; dateIso: string; dayNum: number; dow: number }> = [];
-    for (let i = 0; i < firstDow; i++) out.push({ type: "blank" });
-    for (let d = 1; d <= dim; d++) {
-      const dateIso = iso(new Date(first.getFullYear(), first.getMonth(), d));
-      const dow = new Date(first.getFullYear(), first.getMonth(), d).getDay();
-      out.push({ type: "day", dateIso, dayNum: d, dow });
+  const lyByDate = useMemo(() => {
+    const m = new Map<string, HistoricalDailyRow>();
+    for (const r of lyRows) m.set(r.date, r);
+    return m;
+  }, [lyRows]);
+
+  const dailyTotals = useMemo(() => {
+    let sales = 0;
+    let txns = 0;
+    for (const g of dailyGoals) {
+      sales += Number(g.net_sales_goal || 0);
+      txns += Number(g.transactions_goal || 0);
     }
-    while (out.length % 7 !== 0) out.push({ type: "blank" });
-    return out;
+    return { sales, txns, atv: atv(sales, txns) };
+  }, [dailyGoals]);
+
+  const monthDays = useMemo(() => {
+    const start = new Date(monthStart + "T00:00:00");
+    const end = addMonths(start, 1);
+    const arr: { date: string; day: number; dow: number }[] = [];
+    for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
+      arr.push({ date: iso(d), day: d.getDate(), dow: d.getDay() });
+    }
+    return arr;
   }, [monthStart]);
 
-  function openDay(dateIso: string) {
-    const goal = dailyGoalsMap.get(dateIso);
-    const actual = dailyActualsMap.get(dateIso);
+  const calendarGrid = useMemo(() => {
+    const start = new Date(monthStart + "T00:00:00");
+    const firstDow = start.getDay(); // 0 Sun
+    const cells: Array<{ date?: string; day?: number; dow?: number }> = [];
+    for (let i = 0; i < firstDow; i++) cells.push({});
+    for (const d of monthDays) cells.push({ date: d.date, day: d.day, dow: d.dow });
+    while (cells.length % 7 !== 0) cells.push({});
+    return cells;
+  }, [monthDays, monthStart]);
 
-    const salesGoal = Number(goal?.net_sales_goal ?? 0);
-    const txnsGoal = Number(goal?.transactions_goal ?? 0);
+  const openDrawer = async (dateIso: string) => {
+    setDrawerBusy(true);
+    try {
+      setSelectedDate(dateIso);
+      setDrawerOpen(true);
+    } finally {
+      setDrawerBusy(false);
+    }
+  };
 
-    const past = isPastOrToday(dateIso);
-    const salesActual = past ? Number(actual?.net_sales_actual ?? 0) : 0;
-    const txnsActual = past ? Number(actual?.transactions_actual ?? 0) : 0;
+  const selectedLyDate = useMemo(() => {
+    if (!selectedDate) return "";
+    const d = new Date(selectedDate + "T00:00:00");
+    const lyD = new Date(d.getFullYear() - 1, d.getMonth(), d.getDate());
+    return iso(lyD);
+  }, [selectedDate]);
 
-    const lyDateIso = addYears(dateIso, -1);
-    const ly = lyMap.get(lyDateIso);
-
-    const lySales = Number(ly?.net_sales ?? 0);
-    const lyTxns = Number(ly?.transactions ?? 0);
-
-    setSelectedDay({
-      dateIso,
-      storeId,
-      storeName,
-      salesGoal,
-      txnsGoal,
-      salesActual,
-      txnsActual,
-      lyDateIso,
-      lySales,
-      lyTxns,
-    });
-    setDrawerOpen(true);
-  }
-
-  function hitStatusColor(dateIso: string) {
-    // Only show hit/miss for past/today when we have actuals
-    if (!isPastOrToday(dateIso)) return null;
-
-    const goal = dailyGoalsMap.get(dateIso);
-    const actual = dailyActualsMap.get(dateIso);
-    if (!goal || !actual) return null;
-
-    const gSales = Number(goal.net_sales_goal ?? 0);
-    const gTxns = Number(goal.transactions_goal ?? 0);
-    const aSales = Number(actual.net_sales_actual ?? 0);
-    const aTxns = Number(actual.transactions_actual ?? 0);
-
-    // Use a simple combined rule: green if both met, red if either missed.
-    const ok = aSales >= gSales && aTxns >= gTxns;
-    return ok ? "#16a34a" : "#dc2626";
-  }
+  const selectedGoal = useMemo(
+    () => (selectedDate ? goalsByDate.get(selectedDate) : undefined),
+    [selectedDate, goalsByDate]
+  );
+  const selectedActual = useMemo(
+    () => (selectedDate ? actualsByDate.get(selectedDate) : undefined),
+    [selectedDate, actualsByDate]
+  );
+  const selectedLy = useMemo(
+    () => (selectedLyDate ? lyByDate.get(selectedLyDate) : undefined),
+    [selectedLyDate, lyByDate]
+  );
 
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
 
+  const BORDER = "1px solid #e8edf4";
+  const BG = "#f6f8fb";
+  const CARD = "#ffffff";
+  const SOFT = "0 1px 0 rgba(2,6,23,0.03), 0 10px 22px rgba(2,6,23,0.06)";
+  const ACE_RED = "#dc2626";
+  const HIT_GREEN = "#16a34a";
+
+  const monthlySalesGoal = Number(monthlyGoal?.net_sales_goal ?? 0);
+  const monthlyTxGoal = Number(monthlyGoal?.transactions_goal ?? 0);
+  const monthlyAtvGoal = atv(monthlySalesGoal, monthlyTxGoal);
+
   return (
-    <div style={{ padding: 24, maxWidth: PAGE_MAX, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+    <div style={{ padding: 18, maxWidth: 1220, margin: "0 auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
         <div>
           <div style={{ fontSize: 12, opacity: 0.75 }}>Goals</div>
-          <h1 style={{ margin: 0 }}>Monthly Goals</h1>
-          <div style={{ marginTop: 4, opacity: 0.75, fontSize: 13 }}>
-            Past/today show actuals. Future days show goal allocations.
+          <h1 style={{ margin: 0, fontSize: 22, letterSpacing: -0.3 }}>{storeName}</h1>
+          <div style={{ marginTop: 6, fontSize: 13, opacity: 0.75 }}>
+            Past/today shows actuals (when injected). Future shows goal allocations.
           </div>
         </div>
-        <a href="/home">Home</a>
-      </div>
 
-      <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 420px", gap: 12, alignItems: "start" }}>
-        {/* LEFT: Monthly + Daily Totals */}
-        <div style={{ border: BORDER, borderRadius: 14, background: "white", padding: 14 }}>
-          <div style={{ fontWeight: 1000, fontSize: 13 }}>Store Monthly Goals</div>
-          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-            <div style={{ border: BORDER, borderRadius: 12, padding: 12, background: "#f8fafc" }}>
-              <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 900 }}>Sales</div>
-              <div style={{ marginTop: 4, fontWeight: 1100 }}>{money0(monthlyNetSales)}</div>
-            </div>
-            <div style={{ border: BORDER, borderRadius: 12, padding: 12, background: "#f8fafc" }}>
-              <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 900 }}>Txns</div>
-              <div style={{ marginTop: 4, fontWeight: 1100 }}>{int(monthlyTxns)}</div>
-            </div>
-            <div style={{ border: BORDER, borderRadius: 12, padding: 12, background: "#f8fafc" }}>
-              <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 900 }}>ATV</div>
-              <div style={{ marginTop: 4, fontWeight: 1100 }}>{money2(atv(monthlyNetSales, monthlyTxns))}</div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 12, fontWeight: 1000, fontSize: 13 }}>Daily Totals</div>
-          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-            <div style={{ border: BORDER, borderRadius: 12, padding: 12, background: "#f8fafc" }}>
-              <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 900 }}>Sales</div>
-              <div style={{ marginTop: 4, fontWeight: 1100 }}>{money0(dailyTotals.sales)}</div>
-            </div>
-            <div style={{ border: BORDER, borderRadius: 12, padding: 12, background: "#f8fafc" }}>
-              <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 900 }}>Txns</div>
-              <div style={{ marginTop: 4, fontWeight: 1100 }}>{int(dailyTotals.txns)}</div>
-            </div>
-            <div style={{ border: BORDER, borderRadius: 12, padding: 12, background: "#f8fafc" }}>
-              <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 900 }}>ATV</div>
-              <div style={{ marginTop: 4, fontWeight: 1100 }}>{money2(dailyTotals.atv)}</div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 10, fontSize: 11, opacity: 0.75 }}>
-            Note: Daily allocations can differ from the monthly goal. Monthly goal remains the official target.
-          </div>
-
-          {msg && (
-            <div style={{ marginTop: 10, color: "#b91c1c", fontWeight: 800 }}>
-              {msg}
-            </div>
-          )}
-        </div>
-
-        {/* RIGHT: Store + Month selectors */}
-        <div style={{ border: BORDER, borderRadius: 14, background: "white", padding: 14 }}>
-          <div style={{ fontWeight: 1000, fontSize: 13 }}>Store</div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           <select
             value={storeId}
             onChange={(e) => setStoreId(e.target.value)}
-            style={{ width: "100%", padding: 10, borderRadius: 12, border: BORDER, marginTop: 8 }}
+            style={{ padding: "10px 12px", borderRadius: 12, border: BORDER, background: "white", minWidth: 240 }}
           >
             {stores.map((s) => (
               <option key={s.store_id} value={s.store_id}>
@@ -296,202 +239,259 @@ export default function GoalsPage() {
             ))}
           </select>
 
-          <div style={{ marginTop: 12, fontWeight: 1000, fontSize: 13 }}>Month</div>
           <input
             type="month"
-            value={ym(monthStart)}
-            onChange={(e) => setMonthStart(`${e.target.value}-01`)}
-            style={{ width: "100%", padding: 10, borderRadius: 12, border: BORDER, marginTop: 8 }}
+            value={monthKey}
+            onChange={(e) => setMonthStart(monthStartFromMonthKey(e.target.value))}
+            style={{ padding: "10px 12px", borderRadius: 12, border: BORDER, background: "white" }}
           />
+        </div>
+      </div>
 
-          <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", fontSize: 12, opacity: 0.75 }}>
-            <div>{storeName}</div>
-            <div>{ym(monthStart)}</div>
+      {msg ? <div style={{ marginTop: 10, color: ACE_RED, fontWeight: 800 }}>{msg}</div> : null}
+
+      {/* Top summary */}
+      <div
+        style={{
+          marginTop: 14,
+          border: BORDER,
+          borderRadius: 16,
+          background: CARD,
+          boxShadow: SOFT,
+          padding: 14,
+        }}
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 1100, fontSize: 13, opacity: 0.85 }}>Store Monthly Goal (authoritative)</div>
+            <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
+                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>Sales Goal</div>
+                <div style={{ marginTop: 4, fontWeight: 1200 }}>{money0(monthlySalesGoal)}</div>
+              </div>
+              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
+                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>Txns Goal</div>
+                <div style={{ marginTop: 4, fontWeight: 1200 }}>{int(monthlyTxGoal)}</div>
+              </div>
+              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
+                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>ATV Goal</div>
+                <div style={{ marginTop: 4, fontWeight: 1200 }}>{money2(monthlyAtvGoal)}</div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 10, fontSize: 11, opacity: 0.7 }}>
+              Daily allocations are a planning distribution and may not match the monthly goal exactly.
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 1100, fontSize: 13, opacity: 0.85 }}>Daily Allocation Totals + MTD Actuals</div>
+
+            <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
+                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>Daily Sales Total</div>
+                <div style={{ marginTop: 4, fontWeight: 1200 }}>{money0(dailyTotals.sales)}</div>
+              </div>
+              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
+                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>Daily Txns Total</div>
+                <div style={{ marginTop: 4, fontWeight: 1200 }}>{int(dailyTotals.txns)}</div>
+              </div>
+              <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "#fbfcfe" }}>
+                <div style={{ fontSize: 10, opacity: 0.7, fontWeight: 1000 }}>Daily ATV</div>
+                <div style={{ marginTop: 4, fontWeight: 1200 }}>{money2(dailyTotals.atv)}</div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 10, fontSize: 11, opacity: 0.7 }}>
+              Notes: Past/today will show actuals on the calendar when injected. Future days show goal allocations.
+            </div>
           </div>
         </div>
       </div>
 
-      {/* CALENDAR */}
-      <div style={{ marginTop: 12, border: BORDER, borderRadius: 14, background: "white", overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", background: "#fafafa", borderBottom: "1px solid #eef2f7" }}>
-          {DOW.map((d) => (
-            <div key={d} style={{ padding: 12, fontWeight: 1000, fontSize: 12, color: "#334155" }}>
+      {/* Calendar */}
+      <div
+        style={{
+          marginTop: 14,
+          border: BORDER,
+          borderRadius: 16,
+          background: CARD,
+          boxShadow: SOFT,
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", background: BG, borderBottom: BORDER }}>
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+            <div key={d} style={{ padding: "10px 12px", fontWeight: 1000, fontSize: 12, opacity: 0.8 }}>
               {d}
             </div>
           ))}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
-          {calendarCells.map((c, idx) => {
-            if (c.type === "blank") {
-              return (
-                <div
-                  key={idx}
-                  style={{
-                    height: 108,
-                    borderBottom: "1px solid #f1f5f9",
-                    borderRight: idx % 7 !== 6 ? "1px solid #f1f5f9" : "none",
-                    background: "white",
-                  }}
-                />
-              );
-            }
+          {calendarGrid.map((c, idx) => {
+            const date = c.date;
+            const isPastOrToday = !!date && date <= todayIso;
 
-            const dateIso = c.dateIso;
-            const goal = dailyGoalsMap.get(dateIso);
-            const actual = dailyActualsMap.get(dateIso);
-
-            const past = isPastOrToday(dateIso);
+            const goal = date ? goalsByDate.get(date) : undefined;
+            const act = date ? actualsByDate.get(date) : undefined;
 
             const salesGoal = Number(goal?.net_sales_goal ?? 0);
-            const txnsGoal = Number(goal?.transactions_goal ?? 0);
+            const txGoal = Number(goal?.transactions_goal ?? 0);
 
-            const salesActual = past ? Number(actual?.net_sales_actual ?? 0) : 0;
-            const txnsActual = past ? Number(actual?.transactions_actual ?? 0) : 0;
+            const salesActual = Number(act?.net_sales_actual ?? 0);
+            const txActual = Number(act?.transactions_actual ?? 0);
 
-            // What the calendar shows:
-            // - Past/today: actuals (if present), else $0 / 0
-            // - Future: goals
-            const showSales = past ? salesActual : salesGoal;
-            const showTxns = past ? txnsActual : txnsGoal;
-            const showAtv = atv(showSales, showTxns);
+            const displaySales = isPastOrToday ? salesActual : salesGoal;
+            const displayTx = isPastOrToday ? txActual : txGoal;
+            const displayAtv = atv(displaySales, displayTx);
 
-            const status = hitStatusColor(dateIso);
+            const hit = isPastOrToday && goal && act ? salesActual >= salesGoal && txActual >= txGoal : false;
+
+            const barColor = isPastOrToday
+              ? hit
+                ? HIT_GREEN
+                : ACE_RED
+              : "#e5e7eb";
 
             return (
               <button
                 key={idx}
-                onClick={() => openDay(dateIso)}
+                onClick={() => (date ? openDrawer(date) : undefined)}
+                disabled={!date || drawerBusy}
                 style={{
-                  height: 108,
-                  padding: 10,
+                  height: 110,
+                  borderRight: (idx + 1) % 7 === 0 ? "none" : BORDER,
+                  borderBottom: idx >= calendarGrid.length - 7 ? "none" : BORDER,
+                  padding: 12,
                   textAlign: "left",
-                  border: "none",
-                  borderBottom: "1px solid #f1f5f9",
-                  borderRight: idx % 7 !== 6 ? "1px solid #f1f5f9" : "none",
                   background: "white",
-                  cursor: "pointer",
+                  cursor: date ? "pointer" : "default",
                   position: "relative",
+                  opacity: date ? 1 : 0.35,
                 }}
               >
-                {status && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 3,
-                      background: status,
-                    }}
-                  />
-                )}
+                {date ? (
+                  <>
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: 4,
+                        background: barColor,
+                      }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                      <div style={{ fontSize: 14, fontWeight: 1200 }}>{c.day}</div>
+                      <div style={{ fontSize: 11, opacity: 0.6 }}>{isPastOrToday ? "Actual" : "Goal"}</div>
+                    </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
-                  <div style={{ fontWeight: 1100 }}>{c.dayNum}</div>
-                  <div style={{ fontSize: 11, opacity: 0.6 }}>
-                    {past ? "Actual" : "Goal"}
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 6, fontWeight: 900, fontSize: 12 }}>{money0(showSales)}</div>
-                <div style={{ marginTop: 2, fontSize: 12 }}>{int(showTxns)} txns</div>
-                <div style={{ marginTop: 2, fontSize: 11, opacity: 0.75 }}>ATV {money2(showAtv)}</div>
+                    <div style={{ marginTop: 8, fontWeight: 1200, fontSize: 13 }}>{money0(displaySales)}</div>
+                    <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>{int(displayTx)} txns</div>
+                    <div style={{ marginTop: 4, fontSize: 11, opacity: 0.7 }}>ATV {money2(displayAtv)}</div>
+                  </>
+                ) : null}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* DRAWER */}
-      {drawerOpen && selectedDay ? (
+      {/* Drawer */}
+      {drawerOpen ? (
         <div
-          onClick={() => setDrawerOpen(false)}
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(2,6,23,0.42)",
+            background: "rgba(2,6,23,0.40)",
             display: "flex",
-            alignItems: "flex-start",
             justifyContent: "center",
+            alignItems: "flex-end",
             padding: 16,
-            zIndex: 80,
-            backdropFilter: "blur(3px)",
-            overflowY: "auto",
+            zIndex: 50,
           }}
+          onClick={() => setDrawerOpen(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: "min(980px, 96vw)",
-              borderRadius: 16,
-              background: "#ffffff",
+              width: "min(980px, 100%)",
+              background: "white",
+              borderRadius: 18,
               border: BORDER,
-              boxShadow: SHADOW,
+              boxShadow: "0 20px 60px rgba(2,6,23,0.35)",
               overflow: "hidden",
-              marginTop: 24,
             }}
           >
-            <div style={{ padding: 14, borderBottom: "1px solid #eef2f7", background: "#fbfbfc" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 1100, fontSize: 14 }}>
-                    {selectedDay.storeName} • {selectedDay.dateIso}
-                  </div>
-                  <div style={{ marginTop: 3, fontSize: 11, opacity: 0.75 }}>
-                    Day details (Today vs LY)
-                  </div>
+            <div style={{ padding: 16, borderBottom: BORDER, display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <div>
+                <div style={{ fontWeight: 1300, fontSize: 16 }}>
+                  {stores.find((s) => String(s.store_id) === String(storeId))?.store_name ?? storeId} • {selectedDate}
                 </div>
-
-                <button
-                  onClick={() => setDrawerOpen(false)}
-                  style={{
-                    padding: "9px 11px",
-                    borderRadius: 12,
-                    border: BORDER,
-                    background: "white",
-                    fontWeight: 1000,
-                    cursor: "pointer",
-                  }}
-                >
-                  Close
-                </button>
+                <div style={{ marginTop: 2, fontSize: 12, opacity: 0.7 }}>Day details (Today vs LY)</div>
               </div>
+
+              <button
+                onClick={() => setDrawerOpen(false)}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: BORDER,
+                  background: "white",
+                  fontWeight: 1100,
+                  cursor: "pointer",
+                  height: 42,
+                }}
+              >
+                Close
+              </button>
             </div>
 
-            <div style={{ padding: 16, background: "#f6f8fb" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                {/* TODAY */}
-                <div style={{ border: BORDER, borderRadius: 14, background: "white", padding: 14 }}>
-                  <div style={{ fontWeight: 1100, fontSize: 12, opacity: 0.8, marginBottom: 10 }}>Today</div>
+            <div style={{ padding: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                {/* Today */}
+                <div style={{ border: BORDER, borderRadius: 16, padding: 14, background: "#fbfcfe" }}>
+                  <div style={{ fontWeight: 1100, opacity: 0.85 }}>Today</div>
 
-                  {metricCard("Sales Goal", money0(selectedDay.salesGoal))}
-                  {metricCard("Sales Actual", money0(selectedDay.salesActual))}
-                  {metricCard("Trans Forecast", int(selectedDay.txnsGoal))}
-                  {metricCard("Customer Count", int(selectedDay.txnsActual))}
-                  {metricCard("ATV Goal", money2(atv(selectedDay.salesGoal, selectedDay.txnsGoal)))}
-                  {metricCard("Actual ATV", money2(atv(selectedDay.salesActual, selectedDay.txnsActual)))}
+                  <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                    <Card label="Sales Goal" value={money0(Number(selectedGoal?.net_sales_goal ?? 0))} />
+                    <Card label="Sales Actual" value={money0(Number(selectedActual?.net_sales_actual ?? 0))} />
+                    <Card label="Trans Forecast" value={int(Number(selectedGoal?.transactions_goal ?? 0))} />
+                    <Card label="Customer Count" value={int(Number(selectedActual?.transactions_actual ?? 0))} />
+                    <Card
+                      label="ATV Goal"
+                      value={money2(atv(Number(selectedGoal?.net_sales_goal ?? 0), Number(selectedGoal?.transactions_goal ?? 0)))}
+                    />
+                    <Card
+                      label="Actual ATV"
+                      value={money2(atv(Number(selectedActual?.net_sales_actual ?? 0), Number(selectedActual?.transactions_actual ?? 0)))}
+                    />
+                  </div>
                 </div>
 
                 {/* LY */}
-                <div style={{ border: BORDER, borderRadius: 14, background: "white", padding: 14 }}>
-                  <div style={{ fontWeight: 1100, fontSize: 12, opacity: 0.8, marginBottom: 10 }}>
-                    <span>LY</span>{" "}
-                    <span style={{ fontSize: 11, opacity: 0.7 }}>{selectedDay.lyDateIso}</span>
+                <div style={{ border: BORDER, borderRadius: 16, padding: 14, background: "#fbfcfe" }}>
+                  {/* FIX: date on same line as LY, small, no wrapping */}
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                    <div style={{ fontWeight: 1100, opacity: 0.85 }}>LY</div>
+                    <div style={{ fontSize: 11, opacity: 0.65, whiteSpace: "nowrap" }}>{selectedLyDate}</div>
                   </div>
 
-                  // LY doesn’t have “goal” fields in your current model — show dashes for goal lines.
-                  {metricCard("Sales Goal", "—")}
-                  {metricCard("Sales Actual", selectedDay.lySales ? money0(selectedDay.lySales) : "$0")}
-                  {metricCard("Trans Forecast", "—")}
-                  {metricCard("Customer Count", int(selectedDay.lyTxns))}
-                  {metricCard("ATV Goal", "—")}
-                  {metricCard("Actual ATV", money2(atv(selectedDay.lySales, selectedDay.lyTxns)))}
+                  <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                    <Card label="Sales Goal" value={"—"} />
+                    <Card label="Sales Actual" value={money0(Number(selectedLy?.net_sales ?? 0))} />
+                    <Card label="Trans Forecast" value={"—"} />
+                    <Card label="Customer Count" value={int(Number(selectedLy?.transactions ?? 0))} />
+                    <Card label="ATV Goal" value={"—"} />
+                    <Card label="Actual ATV" value={money2(atv(Number(selectedLy?.net_sales ?? 0), Number(selectedLy?.transactions ?? 0)))} />
+                  </div>
                 </div>
               </div>
 
-              <div style={{ marginTop: 12, fontSize: 11, opacity: 0.75 }}>
-                Notes: Past/today show actuals on the calendar when injected. Future days show goal allocations.
+              <div style={{ marginTop: 10, fontSize: 11, opacity: 0.7 }}>
+                Notes: Past/today will show actuals on the calendar when injected. Future days show goal allocations.
               </div>
             </div>
           </div>
@@ -501,11 +501,12 @@ export default function GoalsPage() {
   );
 }
 
-function metricCard(label: string, value: string) {
+function Card({ label, value }: { label: string; value: string }) {
+  const BORDER = "1px solid #e8edf4";
   return (
-    <div style={{ border: "1px solid #eef2f7", borderRadius: 14, padding: 12, background: "#ffffff", marginBottom: 10 }}>
-      <div style={{ fontSize: 11, fontWeight: 900, opacity: 0.7 }}>{label}</div>
-      <div style={{ marginTop: 6, fontSize: 20, fontWeight: 1100 }}>{value}</div>
+    <div style={{ border: BORDER, borderRadius: 14, padding: 12, background: "white" }}>
+      <div style={{ fontSize: 11, opacity: 0.65, fontWeight: 1100 }}>{label}</div>
+      <div style={{ marginTop: 6, fontWeight: 1300 }}>{value}</div>
     </div>
   );
 }
