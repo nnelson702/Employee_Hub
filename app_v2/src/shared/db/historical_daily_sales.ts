@@ -1,49 +1,47 @@
-// src/shared/db/historical_daily_sales.ts
-import { supabase } from "@/shared/supabase/client";
+import { supabase } from "../supabase/client";
 
 export type HistoricalDailyRow = {
-  store_id: string;
+  store_id: string; // text
   date: string; // YYYY-MM-DD
-  net_sales: number;
-  transactions: number;
+  net_sales: number; // numeric
+  transactions: number; // int4
 };
 
-function toRow(r: any): HistoricalDailyRow {
-  return {
-    store_id: String(r.store_id),
-    date: String(r.date),
-    net_sales: Number(r.net_sales ?? 0),
-    transactions: Number(r.transactions ?? 0),
-  };
-}
+type FetchHistParams = {
+  storeId: string;
+  startDate: string; // YYYY-MM-DD inclusive
+  endDateExclusive: string; // YYYY-MM-DD exclusive
+};
 
-/**
- * Fetch historical rows for a store over [startIso, endIso)
- */
-export async function fetchHistoricalRange(
-  storeId: string,
-  startIso: string,
-  endIso: string
-): Promise<HistoricalDailyRow[]> {
+export async function fetchHistoricalForRange({
+  storeId,
+  startDate,
+  endDateExclusive,
+}: FetchHistParams): Promise<HistoricalDailyRow[]> {
   const { data, error } = await supabase
     .from("historical_daily_sales")
     .select("store_id,date,net_sales,transactions")
     .eq("store_id", storeId)
-    .gte("date", startIso)
-    .lt("date", endIso)
+    .gte("date", startDate)
+    .lt("date", endDateExclusive)
     .order("date", { ascending: true });
 
   if (error) throw error;
-  return (data ?? []).map(toRow);
+  return (data ?? []) as HistoricalDailyRow[];
 }
 
-/**
- * Fetch one historical day (LY lookup). Returns null if missing.
- */
-export async function fetchHistoricalDay(
-  storeId: string,
-  dateIso: string
-): Promise<HistoricalDailyRow | null> {
+export async function fetchHistoricalForMonth(storeId: string, monthStart: string): Promise<HistoricalDailyRow[]> {
+  const start = monthStart;
+  const d = new Date(monthStart + "T00:00:00");
+  const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  const endExclusive = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(
+    next.getDate()
+  ).padStart(2, "0")}`;
+
+  return fetchHistoricalForRange({ storeId, startDate: start, endDateExclusive: endExclusive });
+}
+
+export async function fetchHistoricalForDay(storeId: string, dateIso: string): Promise<HistoricalDailyRow | null> {
   const { data, error } = await supabase
     .from("historical_daily_sales")
     .select("store_id,date,net_sales,transactions")
@@ -52,5 +50,5 @@ export async function fetchHistoricalDay(
     .maybeSingle();
 
   if (error) throw error;
-  return data ? toRow(data) : null;
+  return (data ?? null) as HistoricalDailyRow | null;
 }
